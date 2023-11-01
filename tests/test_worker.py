@@ -212,8 +212,8 @@ async def test__run_ok_parent_changed(worker, loop, aiohttp_unused_port) -> None
     worker.sockets = [sock]
     worker.log = mock.Mock()
     worker.loop = loop
+    worker.max_requests = 0
     worker.cfg.access_log_format = ACCEPTABLE_LOG_FORMAT
-    worker.cfg.max_requests = 0
     worker.cfg.is_ssl = False
 
     await worker._run()
@@ -233,8 +233,8 @@ async def test__run_exc(worker, loop, aiohttp_unused_port) -> None:
     worker.sockets = [sock]
     worker.log = mock.Mock()
     worker.loop = loop
+    worker.max_requests = 0
     worker.cfg.access_log_format = ACCEPTABLE_LOG_FORMAT
-    worker.cfg.max_requests = 0
     worker.cfg.is_ssl = False
 
     def raiser():
@@ -252,7 +252,7 @@ def test__create_ssl_context_without_certs_and_ciphers(
     worker,
     tls_certificate_pem_path,
 ) -> None:
-    worker.cfg.ssl_version = ssl.PROTOCOL_SSLv23
+    worker.cfg.ssl_version = ssl.PROTOCOL_TLS_CLIENT
     worker.cfg.cert_reqs = ssl.CERT_OPTIONAL
     worker.cfg.certfile = tls_certificate_pem_path
     worker.cfg.keyfile = tls_certificate_pem_path
@@ -266,7 +266,7 @@ def test__create_ssl_context_with_ciphers(
     worker,
     tls_certificate_pem_path,
 ) -> None:
-    worker.cfg.ssl_version = ssl.PROTOCOL_SSLv23
+    worker.cfg.ssl_version = ssl.PROTOCOL_TLS_CLIENT
     worker.cfg.cert_reqs = ssl.CERT_OPTIONAL
     worker.cfg.certfile = tls_certificate_pem_path
     worker.cfg.keyfile = tls_certificate_pem_path
@@ -281,7 +281,7 @@ def test__create_ssl_context_with_ca_certs(
     tls_ca_certificate_pem_path,
     tls_certificate_pem_path,
 ) -> None:
-    worker.cfg.ssl_version = ssl.PROTOCOL_SSLv23
+    worker.cfg.ssl_version = ssl.PROTOCOL_TLS_CLIENT
     worker.cfg.cert_reqs = ssl.CERT_OPTIONAL
     worker.cfg.certfile = tls_certificate_pem_path
     worker.cfg.keyfile = tls_certificate_pem_path

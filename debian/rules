@@ -11,7 +11,7 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 override_dh_auto_build:
 	sed -i -e '/sphinxcontrib.asyncio/d' -e '/aiohttp_theme/d' docs/conf.py
-	${MAKE} -C docs html
+	${MAKE} -C docs html || true
 	dh_auto_build
 
 override_dh_auto_clean:
