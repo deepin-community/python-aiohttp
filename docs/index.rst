@@ -34,11 +34,13 @@ Library Installation
    $ pip install aiohttp
 
 You may want to install *optional* :term:`cchardet` library as faster
-replacement for :term:`chardet`:
+replacement for :term:`charset-normalizer`:
 
 .. code-block:: bash
 
    $ pip install cchardet
+
+.. include:: _snippets/cchardet-unmaintained-admonition.rst
 
 For speeding up DNS resolving by client API you may install
 :term:`aiodns` as well.
@@ -48,11 +50,11 @@ This option is highly recommended:
 
    $ pip install aiodns
 
-Installing speedups altogether
-------------------------------
+Installing all speedups in one command
+--------------------------------------
 
-The following will get you ``aiohttp`` along with :term:`chardet`,
-:term:`aiodns` and ``brotlipy`` in one bundle. No need to type
+The following will get you ``aiohttp`` along with :term:`cchardet`,
+:term:`aiodns` and ``Brotli`` in one bundle. No need to type
 separate commands anymore!
 
 .. code-block:: bash
@@ -81,8 +83,7 @@ Client example
               html = await response.text()
               print("Body:", html[:15], "...")
 
-  loop = asyncio.get_event_loop()
-  loop.run_until_complete(main())
+  asyncio.run(main())
 
 This prints:
 
@@ -117,6 +118,18 @@ Server example:
 For more information please visit :ref:`aiohttp-client` and
 :ref:`aiohttp-web` pages.
 
+Development mode
+================
+
+When writing your code, we recommend enabling Python's
+`development mode <https://docs.python.org/3/library/devmode.html>`_
+(``python -X dev``). In addition to the extra features enabled for asyncio, aiohttp
+will:
+
+- Use a strict parser in the client code (which can help detect malformed responses
+  from a server).
+- Enable some additional checks (resulting in warnings in certain situations).
+
 What's new in aiohttp 3?
 ========================
 
@@ -139,9 +152,6 @@ Please feel free to file an issue on the `bug tracker
 <https://github.com/aio-libs/aiohttp/issues>`_ if you have found a bug
 or have some suggestion in order to improve the library.
 
-The library uses `Azure Pipelines <https://dev.azure.com/aio-libs/aiohttp/_build>`_ for
-Continuous Integration.
-
 
 Dependencies
 ============
@@ -149,17 +159,9 @@ Dependencies
 - Python 3.6+
 - *async_timeout*
 - *attrs*
-- *chardet*
+- *charset-normalizer*
 - *multidict*
 - *yarl*
-- *Optional* :term:`cchardet` as faster replacement for
-  :term:`chardet`.
-
-  Install it explicitly via:
-
-  .. code-block:: bash
-
-     $ pip install cchardet
 
 - *Optional* :term:`aiodns` for fast DNS resolving. The
   library is highly recommended.

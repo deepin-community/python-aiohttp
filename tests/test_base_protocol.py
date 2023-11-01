@@ -45,10 +45,10 @@ async def test_connection_lost_not_paused() -> None:
     pr = BaseProtocol(loop=loop)
     tr = mock.Mock()
     pr.connection_made(tr)
-    assert not pr._connection_lost
+    assert pr.connected
     pr.connection_lost(None)
     assert pr.transport is None
-    assert pr._connection_lost
+    assert not pr.connected
 
 
 async def test_connection_lost_paused_without_waiter() -> None:
@@ -56,11 +56,11 @@ async def test_connection_lost_paused_without_waiter() -> None:
     pr = BaseProtocol(loop=loop)
     tr = mock.Mock()
     pr.connection_made(tr)
-    assert not pr._connection_lost
+    assert pr.connected
     pr.pause_writing()
     pr.connection_lost(None)
     assert pr.transport is None
-    assert pr._connection_lost
+    assert not pr.connected
 
 
 async def test_drain_lost() -> None:
@@ -179,4 +179,22 @@ async def test_resume_drain_cancelled() -> None:
     pr.resume_writing()
     with suppress(asyncio.CancelledError):
         await t
+    assert pr._drain_waiter is None
+
+
+async def test_parallel_drain_race_condition() -> None:
+    loop = asyncio.get_event_loop()
+    pr = BaseProtocol(loop=loop)
+    tr = mock.Mock()
+    pr.connection_made(tr)
+    pr.pause_writing()
+
+    ts = [loop.create_task(pr._drain_helper()) for _ in range(5)]
+    assert not (await asyncio.wait(ts, timeout=0.5))[
+        0
+    ], "All draining tasks must be pending"
+
+    assert pr._drain_waiter is not None
+    pr.resume_writing()
+    await asyncio.gather(*ts)
     assert pr._drain_waiter is None

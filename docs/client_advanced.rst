@@ -56,6 +56,10 @@ For *text/plain* ::
 
     await session.post(url, data='Привет, Мир!')
 
+.. note::
+   ``Authorization`` header will be removed if you get redirected
+   to a different host or protocol.
+
 Custom Cookies
 --------------
 
@@ -295,7 +299,7 @@ nature are installed to perform their job in each signal handle::
 
 All signals take as a parameters first, the :class:`ClientSession`
 instance used by the specific request related to that signals and
-second, a :class:`SimpleNamespace` instance called
+second, a :class:`~types.SimpleNamespace` instance called
 ``trace_config_ctx``. The ``trace_config_ctx`` object can be used to
 share the state through to the different signals that belong to the
 same request and to the same :class:`TraceConfig` class, perhaps::
@@ -310,7 +314,7 @@ same request and to the same :class:`TraceConfig` class, perhaps::
 
 
 The ``trace_config_ctx`` param is by default a
-:class:`SimpleNampespace` that is initialized at the beginning of the
+:class:`~types.SimpleNamespace` that is initialized at the beginning of the
 request flow. However, the factory used to create this object can be
 overwritten using the ``trace_config_ctx_factory`` constructor param of
 the :class:`TraceConfig` class.
@@ -522,9 +526,11 @@ DER with e.g::
 Proxy support
 -------------
 
-aiohttp supports plain HTTP proxies and HTTP proxies that can be upgraded to HTTPS
-via the HTTP CONNECT method. aiohttp does not support proxies that must be
-connected to via ``https://``. To connect, use the *proxy* parameter::
+aiohttp supports plain HTTP proxies and HTTP proxies that can be
+upgraded to HTTPS via the HTTP CONNECT method. aiohttp has a limited
+support for proxies that must be connected to via ``https://`` — see
+the info box below for more details.
+To connect, use the *proxy* parameter::
 
    async with aiohttp.ClientSession() as session:
        async with session.get("http://python.org",
@@ -549,15 +555,46 @@ Contrary to the ``requests`` library, it won't read environment
 variables by default. But you can do so by passing
 ``trust_env=True`` into :class:`aiohttp.ClientSession`
 constructor for extracting proxy configuration from
-*HTTP_PROXY* or *HTTPS_PROXY* *environment variables* (both are case
-insensitive)::
+*HTTP_PROXY*, *HTTPS_PROXY*, *WS_PROXY* or *WSS_PROXY* *environment
+variables* (all are case insensitive)::
 
    async with aiohttp.ClientSession(trust_env=True) as session:
        async with session.get("http://python.org") as resp:
            print(resp.status)
 
+.. versionadded:: 3.8
+
+   *WS_PROXY* and *WSS_PROXY* are supported since aiohttp v3.8.
+
 Proxy credentials are given from ``~/.netrc`` file if present (see
 :class:`aiohttp.ClientSession` for more details).
+
+.. attention::
+
+   CPython has introduced the support for TLS in TLS around Python 3.7.
+   But, as of now (Python 3.10), it's disabled for the transports that
+   :py:mod:`asyncio` uses. If the further release of Python (say v3.11)
+   toggles one attribute, it'll *just work™*.
+
+   aiohttp v3.8 and higher is ready for this to happen and has code in
+   place supports TLS-in-TLS, hence sending HTTPS requests over HTTPS
+   proxy tunnels.
+
+   ⚠️ For as long as your Python runtime doesn't declare the support for
+   TLS-in-TLS, please don't file bugs with aiohttp but rather try to
+   help the CPython upstream enable this feature. Meanwhile, if you
+   *really* need this to work, there's a patch that may help you make
+   it happen, include it into your app's code base:
+   https://github.com/aio-libs/aiohttp/discussions/6044#discussioncomment-1432443.
+
+.. important::
+
+   When supplying a custom :py:class:`ssl.SSLContext` instance, bear in
+   mind that it will be used not only to establish a TLS session with
+   the HTTPS endpoint you're hitting but also to establish a TLS tunnel
+   to the HTTPS proxy. To avoid surprises, make sure to set up the trust
+   chain that would recognize TLS certificates used by both the endpoint
+   and the proxy.
 
 Graceful Shutdown
 -----------------
@@ -603,3 +640,33 @@ are changed so that aiohttp itself can wait on the underlying
 connection to close. Please follow issue `#1925
 <https://github.com/aio-libs/aiohttp/issues/1925>`_ for the progress
 on this.
+
+
+Character Set Detection
+-----------------------
+
+If you encounter an 'Automatic charset detection will be removed' warning
+when using :meth:`ClientResponse.text()` this may be because the response
+does not include the charset needed to decode the body.
+
+If you know the correct encoding for a request, you can simply specify
+the encoding as a parameter (e.g. ``resp.text("windows-1252")``).
+
+Alternatively, :class:`ClientSession` accepts a ``fallback_charset_resolver`` parameter which
+can be used to reintroduce charset guessing functionality. When a charset is not found
+in the Content-Type header, this function will be called to get the charset encoding. For
+example, this can be used with the ``chardetng_py`` library.::
+
+    from chardetng_py import detect
+
+    def charset_resolver(resp: ClientResponse, body: bytes) -> str:
+        tld = resp.url.host.rsplit(".", maxsplit=1)[-1]
+        return detect(body, allow_utf8=True, tld=tld)
+
+    ClientSession(fallback_charset_resolver=charset_resolver)
+
+Or, if ``chardetng_py`` doesn't work for you, then ``charset-normalizer`` is another option::
+
+    from charset_normalizer import detect
+
+    ClientSession(fallback_charset_resolver=lamba r, b: detect(b)["encoding"] or "utf-8")
