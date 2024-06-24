@@ -15,8 +15,6 @@ import {
 } from './constants';
 import { URL } from './url';
 
-type MaybeNode = string | Match | Node;
-
 const NODES: ReadonlyArray<string> = [
   'start',
   'after_start',
@@ -341,7 +339,7 @@ export class HTTP {
     n('res_after_version')
       .match(' ', this.update('status_code', 0, 'res_status_code_digit_1'))
       .otherwise(p.error(ERROR.INVALID_VERSION,
-          'Expected space after version'));
+        'Expected space after version'));
 
     n('res_status_code_digit_1')
       .select(NUM_MAP, this.mulAdd('status_code', {
@@ -351,11 +349,11 @@ export class HTTP {
       .otherwise(p.error(ERROR.INVALID_STATUS, 'Invalid status code'));
 
     n('res_status_code_digit_2')
-    .select(NUM_MAP, this.mulAdd('status_code', {
-      overflow: p.error(ERROR.INVALID_STATUS, 'Invalid status code'),
-      success: 'res_status_code_digit_3',
-    }))
-    .otherwise(p.error(ERROR.INVALID_STATUS, 'Invalid status code'));
+      .select(NUM_MAP, this.mulAdd('status_code', {
+        overflow: p.error(ERROR.INVALID_STATUS, 'Invalid status code'),
+        success: 'res_status_code_digit_3',
+      }))
+      .otherwise(p.error(ERROR.INVALID_STATUS, 'Invalid status code'));
 
     n('res_status_code_digit_3')
       .select(NUM_MAP, this.mulAdd('status_code', {
@@ -397,7 +395,7 @@ export class HTTP {
       .skipTo(n('res_status'));
 
     n('res_line_almost_done')
-      .match(['\r', '\n'], onStatusComplete)
+      .match([ '\r', '\n' ], onStatusComplete)
       .otherwise(this.testLenientFlags(LENIENT_FLAGS.OPTIONAL_LF_AFTER_CR, {
         1: onStatusComplete,
       }, p.error(ERROR.STRICT, 'Expected LF after CR')));
@@ -408,7 +406,7 @@ export class HTTP {
     n('after_start_req')
       .select(METHOD_MAP, this.store('method', this.span.method.end(
         this.invokePausable('on_method_complete', ERROR.CB_METHOD_COMPLETE, n('req_first_space_before_url'),
-      ))))
+        ))))
       .otherwise(p.error(ERROR.INVALID_METHOD, 'Invalid method encountered'));
 
     n('req_first_space_before_url')
@@ -439,7 +437,7 @@ export class HTTP {
           this.update('http_minor', 9, onUrlCompleteHTTP09)),
       );
 
-    const checkMethod = (methods: METHODS[], error: string): Node => {
+    const checkMethod = (methods: number[], error: string): Node => {
       const success = n('req_http_version');
       const failure = p.error(ERROR.INVALID_CONSTANT, error);
 
@@ -542,6 +540,7 @@ export class HTTP {
           }).otherwise(this.headersCompleted()),
         }, onInvalidHeaderFieldChar),
       )
+      .peek(':', p.error(ERROR.INVALID_HEADER_TOKEN, 'Invalid header token'))
       .otherwise(span.headerField.start(n('header_field')));
 
     n('header_field')
@@ -565,7 +564,7 @@ export class HTTP {
     const checkInvalidTransferEncoding = (otherwise: Node) => {
       return this.testFlags(FLAGS.CONTENT_LENGTH, {
         1: this.testLenientFlags(LENIENT_FLAGS.CHUNKED_LENGTH, {
-          0: p.error(ERROR.INVALID_TRANSFER_ENCODING, "Transfer-Encoding can't be present with Content-Length"),
+          0: p.error(ERROR.INVALID_TRANSFER_ENCODING, 'Transfer-Encoding can\'t be present with Content-Length'),
         }).otherwise(otherwise),
       }).otherwise(otherwise);
     };
@@ -573,7 +572,7 @@ export class HTTP {
     const checkInvalidContentLength = (otherwise: Node) => {
       return this.testFlags(FLAGS.TRANSFER_ENCODING, {
         1: this.testLenientFlags(LENIENT_FLAGS.CHUNKED_LENGTH, {
-          0: p.error(ERROR.INVALID_CONTENT_LENGTH, "Content-Length can't be present with Transfer-Encoding"),
+          0: p.error(ERROR.INVALID_CONTENT_LENGTH, 'Content-Length can\'t be present with Transfer-Encoding'),
         }).otherwise(otherwise),
       }).otherwise(otherwise);
     };
@@ -749,7 +748,7 @@ export class HTTP {
     n('header_value_content_length_ws')
       .match(' ', n('header_value_content_length_ws'))
       .peek([ '\r', '\n' ],
-          this.setFlag(FLAGS.CONTENT_LENGTH, 'header_value_otherwise'))
+        this.setFlag(FLAGS.CONTENT_LENGTH, 'header_value_otherwise'))
       .otherwise(invalidContentLength('Invalid character in Content-Length'));
 
     //
@@ -827,11 +826,14 @@ export class HTTP {
         'Missing expected LF after header value'));
 
     n('header_value_lws')
-      .peek([ ' ', '\t' ],
-        this.load('header_state', {
-          [HEADER_STATE.TRANSFER_ENCODING_CHUNKED]:
-            this.resetHeaderState(span.headerValue.start(n('header_value_start'))),
-        }, span.headerValue.start(n('header_value_start'))))
+      .peek(
+        [ ' ', '\t' ],
+        this.testLenientFlags(LENIENT_FLAGS.HEADERS, {
+          1: this.load('header_state', {
+            [HEADER_STATE.TRANSFER_ENCODING_CHUNKED]:
+              this.resetHeaderState(span.headerValue.start(n('header_value_start'))),
+          }, span.headerValue.start(n('header_value_start'))),
+        }, p.error(ERROR.INVALID_HEADER_TOKEN, 'Unexpected whitespace after header value')))
       .otherwise(this.setHeaderFlags(onHeaderValueComplete));
 
     const checkTrailing = this.testFlags(FLAGS.TRAILING, {
@@ -926,12 +928,12 @@ export class HTTP {
 
     const onChunkExtensionNameCompleted = (destination: Node) => {
       return this.invokePausable(
-       'on_chunk_extension_name', ERROR.CB_CHUNK_EXTENSION_NAME_COMPLETE, destination);
+        'on_chunk_extension_name', ERROR.CB_CHUNK_EXTENSION_NAME_COMPLETE, destination);
     };
 
     const onChunkExtensionValueCompleted = (destination: Node) => {
       return this.invokePausable(
-       'on_chunk_extension_value', ERROR.CB_CHUNK_EXTENSION_VALUE_COMPLETE, destination);
+        'on_chunk_extension_value', ERROR.CB_CHUNK_EXTENSION_VALUE_COMPLETE, destination);
     };
 
     n('chunk_extensions')
@@ -1088,7 +1090,7 @@ export class HTTP {
     n('restart')
       .otherwise(
         this.update('initial_message_completed', 1, this.update('finish', FINISH.SAFE, n('start')),
-      ));
+        ));
   }
 
   private headersCompleted(): Node {
@@ -1128,7 +1130,7 @@ export class HTTP {
     }
 
     assert(this.nodes.has(name), `Unknown node with name "${name}"`);
-    return this.nodes.get(name)! as any;
+    return this.nodes.get(name) as unknown as T;
   }
 
   private load(field: string, map: { [key: number]: Node },
@@ -1170,17 +1172,17 @@ export class HTTP {
     return span.start(span.end(this.node(next)));
   }
 
-  private unsetFlag(flag: FLAGS, next: string | Node): Node {
+  private unsetFlag(flag: number, next: string | Node): Node {
     const p = this.llparse;
     return p.invoke(p.code.and('flags', ~flag), this.node(next));
   }
 
-  private setFlag(flag: FLAGS, next: string | Node): Node {
+  private setFlag(flag: number, next: string | Node): Node {
     const p = this.llparse;
     return p.invoke(p.code.or('flags', flag), this.node(next));
   }
 
-  private testFlags(flag: FLAGS, map: { [key: number]: Node },
+  private testFlags(flag: number, map: { [key: number]: Node },
                     next?: string | Node): Node {
     const p = this.llparse;
     const res = p.invoke(p.code.test('flags', flag), map);
@@ -1190,7 +1192,7 @@ export class HTTP {
     return res;
   }
 
-  private testLenientFlags(flag: LENIENT_FLAGS, map: { [key: number]: Node },
+  private testLenientFlags(flag: number, map: { [key: number]: Node },
                            next?: string | Node): Node {
     const p = this.llparse;
     const res = p.invoke(p.code.test('lenient_flags', flag), map);
@@ -1241,8 +1243,7 @@ export class HTTP {
     return res;
   }
 
-  private invokePausable(name: string, errorCode: ERROR, next: string | Node)
-    : Node {
+  private invokePausable(name: string, errorCode: number, next: string | Node): Node {
     let cb;
 
     switch (name) {

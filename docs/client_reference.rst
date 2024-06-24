@@ -49,16 +49,18 @@ The client session supports the context manager protocol for self closing.
                          connector_owner=True, \
                          auto_decompress=True, \
                          read_bufsize=2**16, \
-                         requote_redirect_url=False, \
+                         requote_redirect_url=True, \
                          trust_env=False, \
                          trace_configs=None, \
-                         fallback_charset_resolver=_chardet_resolver)
+                         fallback_charset_resolver=lambda r, b: "utf-8")
 
    The class for creating client sessions and making requests.
 
 
    :param base_url: Base part of the URL (optional)
-      If set it allows to skip the base part in request calls.
+      If set, it allows to skip the base part (https://docs.aiohttp.org) in
+      request calls. It must not include a path (as in
+      https://docs.aiohttp.org/en/stable).
 
       .. versionadded:: 3.8
 
@@ -135,6 +137,22 @@ The client session supports the context manager protocol for self closing.
       requests where you need to handle responses with status 400 or
       higher.
 
+      You can also provide a coroutine which takes the response as an
+      argument and can raise an exception based on custom logic, e.g.::
+
+          async def custom_check(response):
+              if response.status not in {201, 202}:
+                  raise RuntimeError('expected either 201 or 202')
+              text = await response.text()
+              if 'apple pie' not in text:
+                  raise RuntimeError('I wanted to see "apple pie" in response')
+
+          client_session = aiohttp.ClientSession(raise_for_status=custom_check)
+          ...
+
+      As with boolean values, you're free to set this on the session and/or
+      overwrite it on a per-request basis.
+
    :param timeout: a :class:`ClientTimeout` settings structure, 300 seconds (5min)
         total timeout by default.
 
@@ -164,8 +182,7 @@ The client session supports the context manager protocol for self closing.
       connection pool between sessions without sharing session state:
       cookies etc.
 
-   :param bool auto_decompress: Automatically decompress response body,
-       ``True`` by default
+   :param bool auto_decompress: Automatically decompress response body (``True`` by default).
 
       .. versionadded:: 2.3
 
@@ -174,11 +191,16 @@ The client session supports the context manager protocol for self closing.
 
       .. versionadded:: 3.7
 
-   :param bool trust_env: Get proxies information from *HTTP_PROXY* /
-      *HTTPS_PROXY* environment variables if the parameter is ``True``
-      (``False`` by default).
+   :param bool trust_env: Trust environment settings for proxy configuration if the parameter
+      is ``True`` (``False`` by default). See :ref:`aiohttp-client-proxy-support` for
+      more information.
 
       Get proxy credentials from ``~/.netrc`` file if present.
+
+      Get HTTP Basic Auth credentials from :file:`~/.netrc` file if present.
+
+      If :envvar:`NETRC` environment variable is set, read from file specified
+      there rather than from :file:`~/.netrc`.
 
       .. seealso::
 
@@ -189,6 +211,10 @@ The client session supports the context manager protocol for self closing.
       .. versionchanged:: 3.0
 
          Added support for ``~/.netrc`` file.
+
+      .. versionchanged:: 3.9
+
+         Added support for reading HTTP Basic Auth credentials from :file:`~/.netrc` file.
 
    :param bool requote_redirect_url: Apply *URL requoting* for redirection URLs if
                                      automatic redirection is enabled (``True`` by
@@ -207,9 +233,7 @@ The client session supports the context manager protocol for self closing.
       the encoding parameter to :meth:`bytes.decode()`.
 
       This function will be called when the charset is not known (e.g. not specified in the
-      Content-Type header). The default function in 3.8.6 calls ``chardetng``
-      or ``charset-normaliser``. In 3.9+ this be replaced with a function that
-      simply defaults to ``utf-8``.
+      Content-Type header). The default function simply defaults to ``utf-8``.
 
       .. versionadded:: 3.8.6
 
@@ -325,8 +349,9 @@ The client session supports the context manager protocol for self closing.
 
    .. attribute:: trust_env
 
-      Should get proxies information from HTTP_PROXY / HTTPS_PROXY environment
-      variables or ~/.netrc file if present
+      Trust environment settings for proxy configuration
+      or ~/.netrc file if present. See :ref:`aiohttp-client-proxy-support` for
+      more information.
 
       :class:`bool` default is ``False``
 
@@ -340,7 +365,7 @@ The client session supports the context manager protocol for self closing.
 
       .. versionadded:: 3.7
 
-   .. comethod:: request(method, url, *, params=None, data=None, json=None,\
+   .. method:: request(method, url, *, params=None, data=None, json=None,\
                          cookies=None, headers=None, skip_auto_headers=None, \
                          auth=None, allow_redirects=True,\
                          max_redirects=10,\
@@ -350,12 +375,13 @@ The client session supports the context manager protocol for self closing.
                          proxy=None, proxy_auth=None,\
                          timeout=sentinel, ssl=None, \
                          verify_ssl=None, fingerprint=None, \
-                         ssl_context=None, proxy_headers=None)
-      :async-with:
-      :coroutine:
+                         ssl_context=None, proxy_headers=None, \
+                         server_hostname=None, auto_decompress=None)
+      :async:
       :noindexentry:
 
-      Performs an asynchronous HTTP request. Returns a response object.
+      Performs an asynchronous HTTP request. Returns a response object that
+      should be used as an async context manager.
 
       :param str method: HTTP method
 
@@ -500,6 +526,13 @@ The client session supports the context manager protocol for self closing.
 
             Use ``ssl=aiohttp.Fingerprint(digest)``
 
+      :param str server_hostname: Sets or overrides the host name that the
+         target server’s certificate will be matched against.
+
+         See :py:meth:`asyncio.loop.create_connection` for more information.
+
+         .. versionadded:: 3.9
+
       :param ssl.SSLContext ssl_context: ssl context used for processing
          *HTTPS* requests (optional).
 
@@ -524,14 +557,17 @@ The client session supports the context manager protocol for self closing.
 
          .. versionadded:: 3.0
 
+      :param bool auto_decompress: Automatically decompress response body.
+         Overrides :attr:`ClientSession.auto_decompress`.
+         May be used to enable/disable auto decompression on a per-request basis.
+
       :return ClientResponse: a :class:`client response <ClientResponse>`
          object.
 
-   .. comethod:: get(url, *, allow_redirects=True, **kwargs)
-      :async-with:
-      :coroutine:
+   .. method:: get(url, *, allow_redirects=True, **kwargs)
+      :async:
 
-      Perform a ``GET`` request.
+      Perform a ``GET`` request. Returns an async context manager.
 
       In order to modify inner
       :meth:`request<aiohttp.ClientSession.request>`
@@ -545,31 +581,10 @@ The client session supports the context manager protocol for self closing.
       :return ClientResponse: a :class:`client response
                               <ClientResponse>` object.
 
-   .. comethod:: post(url, *, data=None, **kwargs)
-      :async-with:
-      :coroutine:
+   .. method:: post(url, *, data=None, **kwargs)
+      :async:
 
-      Perform a ``POST`` request.
-
-      In order to modify inner
-      :meth:`request<aiohttp.ClientSession.request>`
-      parameters, provide `kwargs`.
-
-
-      :param url: Request URL, :class:`str` or :class:`~yarl.URL`
-
-      :param data: Data to send in the body of the request; see
-                   :meth:`request<aiohttp.ClientSession.request>`
-                   for details (optional)
-
-      :return ClientResponse: a :class:`client response
-                              <ClientResponse>` object.
-
-   .. comethod:: put(url, *, data=None, **kwargs)
-      :async-with:
-      :coroutine:
-
-      Perform a ``PUT`` request.
+      Perform a ``POST`` request. Returns an async context manager.
 
       In order to modify inner
       :meth:`request<aiohttp.ClientSession.request>`
@@ -585,11 +600,29 @@ The client session supports the context manager protocol for self closing.
       :return ClientResponse: a :class:`client response
                               <ClientResponse>` object.
 
-   .. comethod:: delete(url, **kwargs)
-      :async-with:
-      :coroutine:
+   .. method:: put(url, *, data=None, **kwargs)
+      :async:
 
-      Perform a ``DELETE`` request.
+      Perform a ``PUT`` request. Returns an async context manager.
+
+      In order to modify inner
+      :meth:`request<aiohttp.ClientSession.request>`
+      parameters, provide `kwargs`.
+
+
+      :param url: Request URL, :class:`str` or :class:`~yarl.URL`
+
+      :param data: Data to send in the body of the request; see
+                   :meth:`request<aiohttp.ClientSession.request>`
+                   for details (optional)
+
+      :return ClientResponse: a :class:`client response
+                              <ClientResponse>` object.
+
+   .. method:: delete(url, **kwargs)
+      :async:
+
+      Perform a ``DELETE`` request. Returns an async context manager.
 
       In order to modify inner
       :meth:`request<aiohttp.ClientSession.request>`
@@ -600,11 +633,10 @@ The client session supports the context manager protocol for self closing.
       :return ClientResponse: a :class:`client response
                               <ClientResponse>` object.
 
-   .. comethod:: head(url, *, allow_redirects=False, **kwargs)
-      :async-with:
-      :coroutine:
+   .. method:: head(url, *, allow_redirects=False, **kwargs)
+      :async:
 
-      Perform a ``HEAD`` request.
+      Perform a ``HEAD`` request. Returns an async context manager.
 
       In order to modify inner
       :meth:`request<aiohttp.ClientSession.request>`
@@ -618,11 +650,10 @@ The client session supports the context manager protocol for self closing.
       :return ClientResponse: a :class:`client response
                               <ClientResponse>` object.
 
-   .. comethod:: options(url, *, allow_redirects=True, **kwargs)
-      :async-with:
-      :coroutine:
+   .. method:: options(url, *, allow_redirects=True, **kwargs)
+      :async:
 
-      Perform an ``OPTIONS`` request.
+      Perform an ``OPTIONS`` request. Returns an async context manager.
 
       In order to modify inner
       :meth:`request<aiohttp.ClientSession.request>`
@@ -637,11 +668,10 @@ The client session supports the context manager protocol for self closing.
       :return ClientResponse: a :class:`client response
                               <ClientResponse>` object.
 
-   .. comethod:: patch(url, *, data=None, **kwargs)
-      :async-with:
-      :coroutine:
+   .. method:: patch(url, *, data=None, **kwargs)
+      :async:
 
-      Perform a ``PATCH`` request.
+      Perform a ``PATCH`` request. Returns an async context manager.
 
       In order to modify inner
       :meth:`request<aiohttp.ClientSession.request>`
@@ -656,7 +686,7 @@ The client session supports the context manager protocol for self closing.
       :return ClientResponse: a :class:`client response
                               <ClientResponse>` object.
 
-   .. comethod:: ws_connect(url, *, method='GET', \
+   .. method:: ws_connect(url, *, method='GET', \
                             protocols=(), timeout=10.0,\
                             receive_timeout=None,\
                             auth=None,\
@@ -670,11 +700,10 @@ The client session supports the context manager protocol for self closing.
                             verify_ssl=None, fingerprint=None, \
                             ssl_context=None, proxy_headers=None, \
                             compress=0, max_msg_size=4194304)
-      :async-with:
-      :coroutine:
+      :async:
 
       Create a websocket connection. Returns a
-      :class:`ClientWebSocketResponse` object.
+      :class:`ClientWebSocketResponse` async context manager object.
 
       :param url: Websocket server url, :class:`~yarl.URL` or :class:`str` that
                   will be encoded with :class:`~yarl.URL` (see :class:`~yarl.URL`
@@ -801,7 +830,8 @@ The client session supports the context manager protocol for self closing.
          .. versionadded:: 3.5
 
 
-   .. comethod:: close()
+   .. method:: close()
+      :async:
 
       Close underlying connector.
 
@@ -826,7 +856,7 @@ keepaliving, cookies and complex connection stuff like properly configured SSL
 certification chaining.
 
 
-.. cofunction:: request(method, url, *, params=None, data=None, \
+.. function:: request(method, url, *, params=None, data=None, \
                         json=None,\
                         headers=None, cookies=None, auth=None, \
                         allow_redirects=True, max_redirects=10, \
@@ -836,10 +866,11 @@ certification chaining.
                         read_bufsize=None, \
                         connector=None, loop=None,\
                         read_until_eof=True, timeout=sentinel)
-   :async-with:
+   :async:
 
    Asynchronous context manager for performing an asynchronous HTTP
-   request. Returns a :class:`ClientResponse` response object.
+   request. Returns a :class:`ClientResponse` response object. Use as
+   an async context manager.
 
    :param str method: HTTP method
 
@@ -946,9 +977,6 @@ By default all *connectors* support *keep-alive connections* (behavior
 is controlled by *force_close* constructor's parameter).
 
 
-BaseConnector
-^^^^^^^^^^^^^
-
 .. class:: BaseConnector(*, keepalive_timeout=15, \
                          force_close=False, limit=100, limit_per_host=0, \
                          enable_cleanup_closed=False, loop=None)
@@ -1011,11 +1039,13 @@ BaseConnector
 
       Read-only property.
 
-   .. comethod:: close()
+   .. method:: close()
+      :async:
 
       Close all opened connections.
 
-   .. comethod:: connect(request)
+   .. method:: connect(request)
+      :async:
 
       Get a free connection from pool or create new one if connection
       is absent in the pool.
@@ -1029,16 +1059,12 @@ BaseConnector
 
       :return: :class:`Connection` object.
 
-   .. comethod:: _create_connection(req)
+   .. method:: _create_connection(req)
+      :async:
 
       Abstract method for actual connection establishing, should be
       overridden in subclasses.
 
-
-
-
-TCPConnector
-^^^^^^^^^^^^
 
 .. class:: TCPConnector(*, ssl=None, verify_ssl=True, fingerprint=None, \
                  use_dns_cache=True, ttl_dns_cache=10, \
@@ -1175,9 +1201,6 @@ TCPConnector
       clear all cache otherwise.
 
 
-UnixConnector
-^^^^^^^^^^^^^
-
 .. class:: UnixConnector(path, *, conn_timeout=None, \
                          keepalive_timeout=30, limit=100, \
                          force_close=False, loop=None)
@@ -1209,9 +1232,6 @@ UnixConnector
 
       Path to *UNIX socket*, read-only :class:`str` property.
 
-
-Connection
-^^^^^^^^^^
 
 .. class:: Connection
 
@@ -1265,7 +1285,7 @@ Response object
            assert resp.status == 200
 
    After exiting from ``async with`` block response object will be
-   *released* (see :meth:`release` coroutine).
+   *released* (see :meth:`release` method).
 
    .. attribute:: version
 
@@ -1312,7 +1332,7 @@ Response object
       Reading from the stream may raise
       :exc:`aiohttp.ClientPayloadError` if the response object is
       closed before response receives all data or in case if any
-      transfer encoding related errors like misformed chunked
+      transfer encoding related errors like malformed chunked
       encoding of broken compression data.
 
    .. attribute:: cookies
@@ -1380,7 +1400,8 @@ Response object
 
       For :term:`keep-alive` support see :meth:`release`.
 
-   .. comethod:: read()
+   .. method:: read()
+      :async:
 
       Read the whole response's body as :class:`bytes`.
 
@@ -1394,7 +1415,7 @@ Response object
 
       .. seealso:: :meth:`close`, :meth:`release`.
 
-   .. comethod:: release()
+   .. method:: release()
 
       It is not required to call `release` on the response
       object. When the client fully receives the payload, the
@@ -1408,7 +1429,8 @@ Response object
 
       Do nothing for success responses (less than 400).
 
-   .. comethod:: text(encoding=None)
+   .. method:: text(encoding=None)
+      :async:
 
       Read response's body and return decoded :class:`str` using
       specified *encoding* parameter.
@@ -1424,17 +1446,10 @@ Response object
                            (default).
 
 
+      :raises: :exc:`UnicodeDecodeError` if decoding fails. See also
+               :meth:`get_encoding`.
 
-      .. note::
-
-         If response has no ``charset`` info in ``Content-Type`` HTTP
-         header :term:`cchardet` / :term:`charset-normalizer` is used for
-         content encoding autodetection.
-
-         It may hurt performance. If page encoding is known passing
-         explicit *encoding* parameter might help::
-
-            await resp.text('ISO-8859-1')
+      :return str: decoded *BODY*
 
    .. method:: json(*, encoding=None, loads=json.loads, \
                       content_type='application/json')
@@ -1509,13 +1524,22 @@ manually.
 
    .. method:: get_extra_info(name, default=None)
 
-      Reads extra info from connection's transport
+      Reads optional extra information from the connection's transport.
+      If no value associated with ``name`` is found, ``default`` is returned.
+
+      See :meth:`asyncio.BaseTransport.get_extra_info`
+
+      :param str name: The key to look up in the transport extra information.
+
+      :param default: Default value to be used when no value for ``name`` is
+                      found (default is ``None``).
 
    .. method:: exception()
 
       Returns exception if any occurs or returns None.
 
-   .. comethod:: ping(message=b'')
+   .. method:: ping(message=b'')
+      :async:
 
       Send :const:`~aiohttp.WSMsgType.PING` to peer.
 
@@ -1527,7 +1551,8 @@ manually.
 
          The method is converted into :term:`coroutine`
 
-   .. comethod:: pong(message=b'')
+   .. method:: pong(message=b'')
+      :async:
 
       Send :const:`~aiohttp.WSMsgType.PONG` to peer.
 
@@ -1539,7 +1564,8 @@ manually.
 
          The method is converted into :term:`coroutine`
 
-   .. comethod:: send_str(data, compress=None)
+   .. method:: send_str(data, compress=None)
+      :async:
 
       Send *data* to peer as :const:`~aiohttp.WSMsgType.TEXT` message.
 
@@ -1556,7 +1582,8 @@ manually.
          The method is converted into :term:`coroutine`,
          *compress* parameter added.
 
-   .. comethod:: send_bytes(data, compress=None)
+   .. method:: send_bytes(data, compress=None)
+      :async:
 
       Send *data* to peer as :const:`~aiohttp.WSMsgType.BINARY` message.
 
@@ -1574,7 +1601,8 @@ manually.
          The method is converted into :term:`coroutine`,
          *compress* parameter added.
 
-   .. comethod:: send_json(data, compress=None, *, dumps=json.dumps)
+   .. method:: send_json(data, compress=None, *, dumps=json.dumps)
+      :async:
 
       Send *data* to peer as JSON string.
 
@@ -1600,7 +1628,8 @@ manually.
          The method is converted into :term:`coroutine`,
          *compress* parameter added.
 
-   .. comethod:: close(*, code=WSCloseCode.OK, message=b'')
+   .. method:: close(*, code=WSCloseCode.OK, message=b'')
+      :async:
 
       A :ref:`coroutine<coroutine>` that initiates closing handshake by sending
       :const:`~aiohttp.WSMsgType.CLOSE` message. It waits for
@@ -1612,7 +1641,8 @@ manually.
       :param message: optional payload of *close* message,
          :class:`str` (converted to *UTF-8* encoded bytes) or :class:`bytes`.
 
-   .. comethod:: receive()
+   .. method:: receive()
+      :async:
 
       A :ref:`coroutine<coroutine>` that waits upcoming *data*
       message from peer and returns it.
@@ -1627,7 +1657,8 @@ manually.
 
       :return: :class:`~aiohttp.WSMessage`
 
-   .. coroutinemethod:: receive_str()
+   .. method:: receive_str()
+      :async:
 
       A :ref:`coroutine<coroutine>` that calls :meth:`receive` but
       also asserts the message type is
@@ -1637,7 +1668,8 @@ manually.
 
       :raise TypeError: if message is :const:`~aiohttp.WSMsgType.BINARY`.
 
-   .. coroutinemethod:: receive_bytes()
+   .. method:: receive_bytes()
+      :async:
 
       A :ref:`coroutine<coroutine>` that calls :meth:`receive` but
       also asserts the message type is
@@ -1647,7 +1679,8 @@ manually.
 
       :raise TypeError: if message is :const:`~aiohttp.WSMsgType.TEXT`.
 
-   .. coroutinemethod:: receive_json(*, loads=json.loads)
+   .. method:: receive_json(*, loads=json.loads)
+      :async:
 
       A :ref:`coroutine<coroutine>` that calls :meth:`receive_str` and loads
       the JSON string to a Python dict.
@@ -1666,9 +1699,6 @@ manually.
 Utilities
 ---------
 
-
-ClientTimeout
-^^^^^^^^^^^^^
 
 .. class:: ClientTimeout(*, total=None, connect=None, \
                          sock_connect=None, sock_read=None)
@@ -1735,9 +1765,6 @@ ClientTimeout
          on production environment.
 
 
-ETag
-^^^^
-
 .. class:: ETag(name, is_weak=False)
 
    Represents `ETag` identifier.
@@ -1752,8 +1779,6 @@ ETag
 
    .. versionadded:: 3.8
 
-RequestInfo
-^^^^^^^^^^^
 
 .. class:: RequestInfo()
 
@@ -1778,9 +1803,6 @@ RequestInfo
 
       .. versionadded:: 3.2
 
-
-BasicAuth
-^^^^^^^^^
 
 .. class:: BasicAuth(login, password='', encoding='latin1')
 
@@ -1821,9 +1843,6 @@ BasicAuth
 
       :return: encoded authentication data, :class:`str`.
 
-
-CookieJar
-^^^^^^^^^
 
 .. class:: CookieJar(*, unsafe=False, quote_cookie=True, treat_as_secure_origin = [])
 
@@ -2135,13 +2154,6 @@ Response errors
       .. deprecated:: 3.1
 
 
-.. class:: WSServerHandshakeError
-
-   Web socket server response error.
-
-   Derived from :exc:`ClientResponseError`
-
-
 .. class:: ContentTypeError
 
    Invalid content type.
@@ -2161,6 +2173,13 @@ Response errors
    Derived from :exc:`ClientResponseError`
 
    .. versionadded:: 3.2
+
+
+.. class:: WSServerHandshakeError
+
+   Web socket server response error.
+
+   Derived from :exc:`ClientResponseError`
 
 Connection errors
 ^^^^^^^^^^^^^^^^^
@@ -2188,14 +2207,6 @@ Connection errors
 
    Derived from :exc:`ClientConnectorError`
 
-.. class:: UnixClientConnectorError
-
-   Derived from :exc:`ClientConnectorError`
-
-.. class:: ServerConnectionError
-
-   Derived from :exc:`ClientConnectionError`
-
 .. class:: ClientSSLError
 
    Derived from :exc:`ClientConnectorError`
@@ -2212,6 +2223,14 @@ Connection errors
 
    Derived from :exc:`ClientSSLError` and :exc:`ssl.CertificateError`
 
+.. class:: UnixClientConnectorError
+
+   Derived from :exc:`ClientConnectorError`
+
+.. class:: ServerConnectionError
+
+   Derived from :exc:`ClientConnectionError`
+
 .. class:: ServerDisconnectedError
 
    Server disconnected.
@@ -2223,17 +2242,17 @@ Connection errors
       Partially parsed HTTP message (optional).
 
 
-.. class:: ServerTimeoutError
-
-   Server operation timeout: read timeout, etc.
-
-   Derived from :exc:`ServerConnectionError` and :exc:`asyncio.TimeoutError`
-
 .. class:: ServerFingerprintMismatch
 
    Server fingerprint mismatch.
 
    Derived from :exc:`ServerConnectionError`
+
+.. class:: ServerTimeoutError
+
+   Server operation timeout: read timeout, etc.
+
+   Derived from :exc:`ServerConnectionError` and :exc:`asyncio.TimeoutError`
 
 
 Hierarchy of exceptions
@@ -2241,33 +2260,40 @@ Hierarchy of exceptions
 
 * :exc:`ClientError`
 
-  * :exc:`ClientResponseError`
-
-    * :exc:`ContentTypeError`
-    * :exc:`WSServerHandshakeError`
-    * :exc:`~aiohttp.ClientHttpProxyError`
-
   * :exc:`ClientConnectionError`
 
     * :exc:`ClientOSError`
 
       * :exc:`ClientConnectorError`
 
-         * :exc:`ClientSSLError`
+        * :exc:`ClientProxyConnectionError`
 
-           * :exc:`ClientConnectorCertificateError`
+        * :exc:`ClientSSLError`
 
-           * :exc:`ClientConnectorSSLError`
+          * :exc:`ClientConnectorCertificateError`
 
-         * :exc:`ClientProxyConnectionError`
+          * :exc:`ClientConnectorSSLError`
 
-      * :exc:`ServerConnectionError`
+        * :exc:`UnixClientConnectorError`
 
-         * :exc:`ServerDisconnectedError`
-         * :exc:`ServerTimeoutError`
+    * :exc:`ServerConnectionError`
+
+      * :exc:`ServerDisconnectedError`
 
       * :exc:`ServerFingerprintMismatch`
 
+      * :exc:`ServerTimeoutError`
+
   * :exc:`ClientPayloadError`
+
+  * :exc:`ClientResponseError`
+
+    * :exc:`~aiohttp.ClientHttpProxyError`
+
+    * :exc:`ContentTypeError`
+
+    * :exc:`TooManyRedirects`
+
+    * :exc:`WSServerHandshakeError`
 
   * :exc:`InvalidURL`

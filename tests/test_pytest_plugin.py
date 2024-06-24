@@ -1,8 +1,5 @@
 import os
 import platform
-import sys
-
-import pytest
 
 pytest_plugins = "pytester"
 
@@ -77,7 +74,7 @@ async def test_noop() -> None:
 
 async def previous(request):
     if request.method == 'POST':
-        with pytest.warns(DeprecationWarning):
+        with pytest.deprecated_call():  # FIXME: this isn't actually called
             request.app['value'] = (await request.post())['value']
         return web.Response(body=b'thanks for the data')
     else:
@@ -243,7 +240,6 @@ def test_bar(loop, bar) -> None:
     )
 
 
-@pytest.mark.skipif(sys.version_info < (3, 6), reason="old python")
 def test_aiohttp_plugin_async_gen_fixture(testdir) -> None:
     testdir.makepyfile(
         """\

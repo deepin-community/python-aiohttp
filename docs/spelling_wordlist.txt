@@ -16,6 +16,8 @@ arg
 Arsenic
 async
 asyncio
+asyncpg
+attrs
 auth
 autocalculated
 autodetection
@@ -33,10 +35,13 @@ backports
 BaseEventLoop
 basename
 BasicAuth
+behaviour
 BodyPartReader
 boolean
 botocore
 brotli
+Brotli
+brotlicffi
 brotlipy
 bugfix
 bugfixes
@@ -50,6 +55,7 @@ canonicalize
 cchardet
 cChardet
 ceil
+changelog
 Changelog
 chardet
 Chardet
@@ -61,6 +67,7 @@ CIMultiDict
 ClientSession
 cls
 cmd
+codebase
 codec
 Codings
 committer
@@ -85,7 +92,8 @@ Cythonize
 cythonized
 de
 deduplicate
-# de-facto:
+defs
+Dependabot
 deprecations
 DER
 dev
@@ -99,6 +107,8 @@ dns
 DNSResolver
 docstring
 docstrings
+DoS
+downstreams
 Dup
 elasticsearch
 encodings
@@ -177,7 +187,6 @@ middleware
 middlewares
 miltidict
 misbehaviors
-misformed
 Mixcloud
 Mongo
 Mongo
@@ -219,7 +228,7 @@ performant
 pickleable
 ping
 pipelining
-plugable
+pluggable
 plugin
 poller
 pong
@@ -240,6 +249,7 @@ pytest
 Pytest
 Quickstart
 quote’s
+rc
 readonly
 readpayload
 rebase
@@ -280,7 +290,6 @@ shourtcuts
 skipuntil
 Skyscanner
 SocketSocketTransport
-softwares
 ssl
 SSLContext
 startup
@@ -309,6 +318,8 @@ Testsuite
 Tf
 timestamps
 TLS
+tmp
+tmpdir
 toolbar
 toplevel
 towncrier
@@ -325,6 +336,7 @@ Unittest
 unix
 unsets
 unstripped
+untyped
 uppercased
 upstr
 url

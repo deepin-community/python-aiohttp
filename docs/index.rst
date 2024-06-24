@@ -22,7 +22,7 @@ Key Features
   :ref:`Client WebSockets <aiohttp-client-websockets>` out-of-the-box
   without the Callback Hell.
 - Web-server has :ref:`aiohttp-web-middlewares`,
-  :ref:`aiohttp-web-signals` and plugable routing.
+  :ref:`aiohttp-web-signals` and pluggable routing.
 
 .. _aiohttp-installation:
 
@@ -32,15 +32,6 @@ Library Installation
 .. code-block:: bash
 
    $ pip install aiohttp
-
-You may want to install *optional* :term:`cchardet` library as faster
-replacement for :term:`charset-normalizer`:
-
-.. code-block:: bash
-
-   $ pip install cchardet
-
-.. include:: _snippets/cchardet-unmaintained-admonition.rst
 
 For speeding up DNS resolving by client API you may install
 :term:`aiodns` as well.
@@ -53,9 +44,9 @@ This option is highly recommended:
 Installing all speedups in one command
 --------------------------------------
 
-The following will get you ``aiohttp`` along with :term:`cchardet`,
-:term:`aiodns` and ``Brotli`` in one bundle. No need to type
-separate commands anymore!
+The following will get you ``aiohttp`` along with :term:`aiodns` and ``Brotli`` in one
+bundle.
+No need to type separate commands anymore!
 
 .. code-block:: bash
 
@@ -140,7 +131,7 @@ changes.
 Tutorial
 ========
 
-:ref:`Polls tutorial <aiohttp-demos-polls-beginning>`
+:ref:`Polls tutorial <aiohttpdemos:aiohttp-demos-polls-beginning>`
 
 
 Source code
@@ -156,10 +147,8 @@ or have some suggestion in order to improve the library.
 Dependencies
 ============
 
-- Python 3.6+
 - *async_timeout*
 - *attrs*
-- *charset-normalizer*
 - *multidict*
 - *yarl*
 
@@ -170,11 +159,18 @@ Dependencies
 
      $ pip install aiodns
 
+- *Optional* :term:`Brotli` or :term:`brotlicffi` for brotli (:rfc:`7932`)
+  client compression support.
+
+  .. code-block:: bash
+
+     $ pip install Brotli
+
 
 Communication channels
 ======================
 
-*aio-libs discourse group*: https://aio-libs.discourse.group
+*aio-libs Discussions*: https://github.com/aio-libs/aiohttp/discussions
 
 Feel free to post your questions and ideas here.
 

@@ -442,26 +442,12 @@ checks can be relaxed by setting *ssl* to ``False``::
 
   r = await session.get('https://example.com', ssl=False)
 
-
 If you need to setup custom ssl parameters (use own certification
 files for example) you can create a :class:`ssl.SSLContext` instance and
-pass it into the proper :class:`ClientSession` method::
+pass it into the :meth:`ClientSession.request` methods or set it for the
+entire session with ``ClientSession(connector=TCPConnector(ssl=ssl_context))``.
 
-  sslcontext = ssl.create_default_context(
-     cafile='/path/to/ca-bundle.crt')
-  r = await session.get('https://example.com', ssl=sslcontext)
-
-If you need to verify *self-signed* certificates, you can do the
-same thing as the previous example, but add another call to
-:meth:`ssl.SSLContext.load_cert_chain` with the key pair::
-
-  sslcontext = ssl.create_default_context(
-     cafile='/path/to/ca-bundle.crt')
-  sslcontext.load_cert_chain('/path/to/client/public/device.pem',
-                             '/path/to/client/private/device.key')
-  r = await session.get('https://example.com', ssl=sslcontext)
-
-There is explicit errors when ssl verification fails
+There are explicit errors when ssl verification fails
 
 :class:`aiohttp.ClientConnectorSSLError`::
 
@@ -490,6 +476,34 @@ If you need to skip both ssl related errors
       await session.get('https://wrong.host.badssl.com/')
   except aiohttp.ClientSSLError as e:
       assert isinstance(e, ssl.CertificateError)
+
+Example: Use certifi
+^^^^^^^^^^^^^^^^^^^^
+
+By default, Python uses the system CA certificates. In rare cases, these may not be
+installed or Python is unable to find them, resulting in a error like
+`ssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate`
+
+One way to work around this problem is to use the `certifi` package::
+
+  ssl_context = ssl.create_default_context(cafile=certifi.where())
+  async with ClientSession(connector=TCPConnector(ssl=ssl_context)) as sess:
+      ...
+
+Example: Use self-signed certificate
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you need to verify *self-signed* certificates, you need to add a call to
+:meth:`ssl.SSLContext.load_cert_chain` with the key pair::
+
+  ssl_context = ssl.create_default_context()
+  ssl_context.load_cert_chain("/path/to/client/public/device.pem",
+                              "/path/to/client/private/device.key")
+  async with sess.get("https://example.com", ssl=ssl_context) as resp:
+      ...
+
+Example: Verify certificate fingerprint
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 You may also verify certificates via *SHA256* fingerprint::
 
@@ -523,6 +537,8 @@ DER with e.g::
    to :class:`TCPConnector` as default, the value from
    :meth:`ClientSession.get` and others override default.
 
+.. _aiohttp-client-proxy-support:
+
 Proxy support
 -------------
 
@@ -554,14 +570,17 @@ Authentication credentials can be passed in proxy URL::
 Contrary to the ``requests`` library, it won't read environment
 variables by default. But you can do so by passing
 ``trust_env=True`` into :class:`aiohttp.ClientSession`
-constructor for extracting proxy configuration from
-*HTTP_PROXY*, *HTTPS_PROXY*, *WS_PROXY* or *WSS_PROXY* *environment
-variables* (all are case insensitive)::
+constructor.::
 
    async with aiohttp.ClientSession(trust_env=True) as session:
        async with session.get("http://python.org") as resp:
            print(resp.status)
 
+.. note::
+    aiohttp uses :func:`urllib.request.getproxies`
+    for reading the proxy configuration (e.g. from the *HTTP_PROXY* etc. environment variables) and applies them for the *HTTP*, *HTTPS*, *WS* and *WSS* schemes.
+
+    Hosts defined in ``no_proxy`` will bypass the proxy.
 .. versionadded:: 3.8
 
    *WS_PROXY* and *WSS_PROXY* are supported since aiohttp v3.8.
@@ -571,8 +590,7 @@ Proxy credentials are given from ``~/.netrc`` file if present (see
 
 .. attention::
 
-   CPython has introduced the support for TLS in TLS around Python 3.7.
-   But, as of now (Python 3.10), it's disabled for the transports that
+   As of now (Python 3.10), support for TLS in TLS is disabled for the transports that
    :py:mod:`asyncio` uses. If the further release of Python (say v3.11)
    toggles one attribute, it'll *just work™*.
 
@@ -617,20 +635,15 @@ asyncio.sleep(0)``) will suffice::
         async with aiohttp.ClientSession() as session:
             async with session.get('http://example.org/') as resp:
                 await resp.read()
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(read_website())
-    # Zero-sleep to allow underlying connections to close
-    loop.run_until_complete(asyncio.sleep(0))
-    loop.close()
+        # Zero-sleep to allow underlying connections to close
+        await asyncio.sleep(0)
 
 For a :class:`ClientSession` with SSL, the application must wait a
 short duration before closing::
 
     ...
     # Wait 250 ms for the underlying SSL connections to close
-    loop.run_until_complete(asyncio.sleep(0.250))
-    loop.close()
+    await asyncio.sleep(0.250)
 
 Note that the appropriate amount of time to wait will vary from
 application to application.
@@ -645,15 +658,15 @@ on this.
 Character Set Detection
 -----------------------
 
-If you encounter an 'Automatic charset detection will be removed' warning
-when using :meth:`ClientResponse.text()` this may be because the response
-does not include the charset needed to decode the body.
+If you encounter a :exc:`UnicodeDecodeError` when using :meth:`ClientResponse.text()`
+this may be because the response does not include the charset needed
+to decode the body.
 
 If you know the correct encoding for a request, you can simply specify
 the encoding as a parameter (e.g. ``resp.text("windows-1252")``).
 
 Alternatively, :class:`ClientSession` accepts a ``fallback_charset_resolver`` parameter which
-can be used to reintroduce charset guessing functionality. When a charset is not found
+can be used to introduce charset guessing functionality. When a charset is not found
 in the Content-Type header, this function will be called to get the charset encoding. For
 example, this can be used with the ``chardetng_py`` library.::
 
@@ -661,7 +674,7 @@ example, this can be used with the ``chardetng_py`` library.::
 
     def charset_resolver(resp: ClientResponse, body: bytes) -> str:
         tld = resp.url.host.rsplit(".", maxsplit=1)[-1]
-        return detect(body, allow_utf8=True, tld=tld)
+        return detect(body, allow_utf8=True, tld=tld.encode())
 
     ClientSession(fallback_charset_resolver=charset_resolver)
 
@@ -669,4 +682,4 @@ Or, if ``chardetng_py`` doesn't work for you, then ``charset-normalizer`` is ano
 
     from charset_normalizer import detect
 
-    ClientSession(fallback_charset_resolver=lamba r, b: detect(b)["encoding"] or "utf-8")
+    ClientSession(fallback_charset_resolver=lambda r, b: detect(b)["encoding"] or "utf-8")

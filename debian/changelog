@@ -1,3 +1,35 @@
+python-aiohttp (3.9.5-1) unstable; urgency=medium
+
+  * Team upload.
+  * Use pybuild-plugin-pyproject.
+  * New upstream release:
+    - CVE-2024-23829: Python HTTP parser still overly lenient about
+      separators (closes: #1062708).
+    - CVE-2024-23334: aiohttp.web.static(follow_symlinks=True) is vulnerable
+      to directory traversal (closes: #1062709).
+    - CVE-2024-30251: DoS when trying to parse malformed POST requests
+      (closes: #1070364).
+    - CVE-2024-27306: XSS on index pages for static file handling (closes:
+      #1070665).
+  * Standards-Version: 3.7.0 (no changes required).
+
+ -- Colin Watson <cjwatson@debian.org>  Sun, 16 Jun 2024 12:39:52 +0100
+
+python-aiohttp (3.9.1-1) unstable; urgency=medium
+
+  * Team upload
+  * New upstream version 3.9.1
+    - CVE-2023-49081 (aiohttp's ClientSession is vulnerable to CRLF
+      injection via version) (Closes: #1057163)
+    - CVE-2023-49082 (aiohttp's ClientSession is vulnerable to CRLF
+      injection via method) (Closes: #1057164)
+    - Fix ftbfs on python3.12 (Closes: #1056036)
+  * Update debian/patches
+  * Update debian/copyright
+  * Clean built docs (Closes: #1047256)
+
+ -- Bo YU <tsu.yubo@gmail.com>  Wed, 13 Dec 2023 10:32:49 +0800
+
 python-aiohttp (3.8.6-1) unstable; urgency=medium
 
   * New upstream release
