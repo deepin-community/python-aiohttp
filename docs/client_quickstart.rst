@@ -75,7 +75,7 @@ endpoints of ``http://httpbin.org`` can be used the following code::
    every request is a **very bad** idea.
 
    A session contains a connection pool inside. Connection reusage and
-   keep-alives (both are on by default) may speed up total performance.
+   keep-alive (both are on by default) may speed up total performance.
 
 A session context manager usage is not mandatory
 but ``await session.close()`` method
@@ -184,7 +184,8 @@ The ``gzip`` and ``deflate`` transfer-encodings are automatically
 decoded for you.
 
 You can enable ``brotli`` transfer-encodings support,
-just install  `brotli <https://github.com/python-hyper/Brotli>`_.
+just install `Brotli <https://pypi.org/project/Brotli/>`_
+or `brotlicffi <https://pypi.org/project/brotlicffi/>`_.
 
 JSON Request
 ============
@@ -313,7 +314,7 @@ To upload Multipart-encoded files::
 You can set the ``filename`` and ``content_type`` explicitly::
 
     url = 'http://httpbin.org/post'
-    data = FormData()
+    data = aiohttp.FormData()
     data.add_field('file',
                    open('report.xls', 'rb'),
                    filename='report.xls',
@@ -453,13 +454,17 @@ Supported :class:`ClientTimeout` fields are:
       The maximal number of seconds allowed for period between reading a new
       data portion from a peer.
 
+    ``ceil_threshold``
+
+      The threshold value to trigger ceiling of absolute timeout values.
+
 All fields are floats, ``None`` or ``0`` disables a particular timeout check, see the
 :class:`ClientTimeout` reference for defaults and additional details.
 
 Thus the default timeout is::
 
    aiohttp.ClientTimeout(total=5*60, connect=None,
-                         sock_connect=None, sock_read=None)
+                         sock_connect=None, sock_read=None, ceil_threshold=5)
 
 .. note::
 
@@ -476,4 +481,5 @@ Thus the default timeout is::
    timeout expiration.
 
    Smaller timeouts are not rounded to help testing; in the real life network
-   timeouts usually greater than tens of seconds.
+   timeouts usually greater than tens of seconds. However, the default threshold
+   value of 5 seconds can be configured using the ``ceil_threshold`` parameter.

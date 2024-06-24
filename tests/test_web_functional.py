@@ -4,6 +4,7 @@ import json
 import pathlib
 import socket
 import zlib
+from typing import Any, Optional
 from unittest import mock
 
 import pytest
@@ -11,10 +12,23 @@ from multidict import CIMultiDictProxy, MultiDict
 from yarl import URL
 
 import aiohttp
-from aiohttp import FormData, HttpVersion10, HttpVersion11, TraceConfig, multipart, web
+from aiohttp import (
+    FormData,
+    HttpVersion,
+    HttpVersion10,
+    HttpVersion11,
+    TraceConfig,
+    multipart,
+    web,
+)
 from aiohttp.hdrs import CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING
 from aiohttp.test_utils import make_mocked_coro
 from aiohttp.typedefs import Handler
+
+try:
+    import brotlicffi as brotli
+except ImportError:
+    import brotli
 
 try:
     import ssl
@@ -34,7 +48,8 @@ def fname(here):
 
 def new_dummy_form():
     form = FormData()
-    form.add_field("name", b"123", content_transfer_encoding="base64")
+    with pytest.warns(DeprecationWarning, match="BytesPayload"):
+        form.add_field("name", b"123", content_transfer_encoding="base64")
     return form
 
 
@@ -127,9 +142,13 @@ async def test_head_returns_empty_body(aiohttp_client) -> None:
     assert 200 == resp.status
     txt = await resp.text()
     assert "" == txt
+    # The Content-Length header should be set to 4 which is
+    # the length of the response body if it would have been
+    # returned by a GET request.
+    assert resp.headers["Content-Length"] == "4"
 
 
-async def test_response_before_complete(aiohttp_client) -> None:
+async def test_response_before_complete(aiohttp_client: Any) -> None:
     async def handler(request):
         return web.Response(body=b"OK")
 
@@ -429,25 +448,6 @@ async def test_release_post_data(aiohttp_client) -> None:
     await resp.release()
 
 
-async def test_POST_DATA_with_content_transfer_encoding(aiohttp_client) -> None:
-    async def handler(request):
-        data = await request.post()
-        assert b"123" == data["name"]
-        return web.Response()
-
-    app = web.Application()
-    app.router.add_post("/", handler)
-    client = await aiohttp_client(app)
-
-    form = FormData()
-    form.add_field("name", b"123", content_transfer_encoding="base64")
-
-    resp = await client.post("/", data=form)
-    assert 200 == resp.status
-
-    await resp.release()
-
-
 async def test_post_form_with_duplicate_keys(aiohttp_client) -> None:
     async def handler(request):
         data = await request.post()
@@ -505,7 +505,8 @@ async def test_100_continue(aiohttp_client) -> None:
         return web.Response()
 
     form = FormData()
-    form.add_field("name", b"123", content_transfer_encoding="base64")
+    with pytest.warns(DeprecationWarning, match="BytesPayload"):
+        form.add_field("name", b"123", content_transfer_encoding="base64")
 
     app = web.Application()
     app.router.add_post("/", handler)
@@ -569,6 +570,32 @@ async def test_100_continue_custom_response(aiohttp_client) -> None:
     resp = await client.post("/", data=new_dummy_form(), expect100=True)
     assert 403 == resp.status
     await resp.release()
+
+
+async def test_expect_handler_custom_response(aiohttp_client) -> None:
+    cache = {"foo": "bar"}
+
+    async def handler(request: web.Request) -> web.Response:
+        return web.Response(text="handler")
+
+    async def expect_handler(request: web.Request) -> Optional[web.Response]:
+        k = request.headers.get("X-Key")
+        cached_value = cache.get(k)
+        if cached_value:
+            return web.Response(text=cached_value)
+
+    app = web.Application()
+    # expect_handler is only typed on add_route().
+    app.router.add_route("POST", "/", handler, expect_handler=expect_handler)
+    client = await aiohttp_client(app)
+
+    async with client.post("/", expect100=True, headers={"X-Key": "foo"}) as resp:
+        assert resp.status == 200
+        assert await resp.text() == "bar"
+
+    async with client.post("/", expect100=True, headers={"X-Key": "spam"}) as resp:
+        assert resp.status == 200
+        assert await resp.text() == "handler"
 
 
 async def test_100_continue_for_not_found(aiohttp_client) -> None:
@@ -683,7 +710,7 @@ async def test_upload_file(aiohttp_client) -> None:
     app.router.add_post("/", handler)
     client = await aiohttp_client(app)
 
-    resp = await client.post("/", data={"file": data})
+    resp = await client.post("/", data={"file": io.BytesIO(data)})
     assert 200 == resp.status
 
     await resp.release()
@@ -1051,53 +1078,22 @@ async def test_response_with_payload_stringio(aiohttp_client, fname) -> None:
     await resp.release()
 
 
-async def test_response_with_precompressed_body_gzip(aiohttp_client) -> None:
-    async def handler(request):
-        headers = {"Content-Encoding": "gzip"}
-        zcomp = zlib.compressobj(wbits=16 + zlib.MAX_WBITS)
-        data = zcomp.compress(b"mydata") + zcomp.flush()
-        return web.Response(body=data, headers=headers)
-
-    app = web.Application()
-    app.router.add_get("/", handler)
-    client = await aiohttp_client(app)
-
-    resp = await client.get("/")
-    assert 200 == resp.status
-    data = await resp.read()
-    assert b"mydata" == data
-    assert resp.headers.get("Content-Encoding") == "gzip"
-
-    await resp.release()
-
-
-async def test_response_with_precompressed_body_deflate(aiohttp_client) -> None:
-    async def handler(request):
-        headers = {"Content-Encoding": "deflate"}
-        zcomp = zlib.compressobj(wbits=zlib.MAX_WBITS)
-        data = zcomp.compress(b"mydata") + zcomp.flush()
-        return web.Response(body=data, headers=headers)
-
-    app = web.Application()
-    app.router.add_get("/", handler)
-    client = await aiohttp_client(app)
-
-    resp = await client.get("/")
-    assert 200 == resp.status
-    data = await resp.read()
-    assert b"mydata" == data
-    assert resp.headers.get("Content-Encoding") == "deflate"
-
-    await resp.release()
-
-
-async def test_response_with_precompressed_body_deflate_no_hdrs(aiohttp_client) -> None:
-    async def handler(request):
-        headers = {"Content-Encoding": "deflate"}
+@pytest.mark.parametrize(
+    "compressor,encoding",
+    [
+        (zlib.compressobj(wbits=16 + zlib.MAX_WBITS), "gzip"),
+        (zlib.compressobj(wbits=zlib.MAX_WBITS), "deflate"),
         # Actually, wrong compression format, but
         # should be supported for some legacy cases.
-        zcomp = zlib.compressobj(wbits=-zlib.MAX_WBITS)
-        data = zcomp.compress(b"mydata") + zcomp.flush()
+        (zlib.compressobj(wbits=-zlib.MAX_WBITS), "deflate"),
+    ],
+)
+async def test_response_with_precompressed_body(
+    aiohttp_client, compressor, encoding
+) -> None:
+    async def handler(request):
+        headers = {"Content-Encoding": encoding}
+        data = compressor.compress(b"mydata") + compressor.flush()
         return web.Response(body=data, headers=headers)
 
     app = web.Application()
@@ -1108,7 +1104,27 @@ async def test_response_with_precompressed_body_deflate_no_hdrs(aiohttp_client) 
     assert 200 == resp.status
     data = await resp.read()
     assert b"mydata" == data
-    assert resp.headers.get("Content-Encoding") == "deflate"
+    assert resp.headers.get("Content-Encoding") == encoding
+
+    await resp.release()
+
+
+async def test_response_with_precompressed_body_brotli(aiohttp_client) -> None:
+    async def handler(request):
+        headers = {"Content-Encoding": "br"}
+        return web.Response(body=brotli.compress(b"mydata"), headers=headers)
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    client = await aiohttp_client(app)
+
+    resp = await client.get("/")
+    assert 200 == resp.status
+    data = await resp.read()
+    assert b"mydata" == data
+    assert resp.headers.get("Content-Encoding") == "br"
+
+    await resp.release()
 
 
 async def test_bad_request_payload(aiohttp_client) -> None:
@@ -1534,26 +1550,27 @@ async def test_subapp_middleware_context(aiohttp_client, route, expected, middle
     def show_app_context(appname):
         @web.middleware
         async def middleware(request, handler: Handler):
-            values.append("{}: {}".format(appname, request.app["my_value"]))
+            values.append(f"{appname}: {request.app[my_value]}")
             return await handler(request)
 
         return middleware
 
     def make_handler(appname):
         async def handler(request):
-            values.append("{}: {}".format(appname, request.app["my_value"]))
+            values.append(f"{appname}: {request.app[my_value]}")
             return web.Response(text="Ok")
 
         return handler
 
     app = web.Application()
-    app["my_value"] = "root"
+    my_value = web.AppKey("my_value", str)
+    app[my_value] = "root"
     if "A" in middlewares:
         app.middlewares.append(show_app_context("A"))
     app.router.add_get("/", make_handler("B"))
 
     subapp = web.Application()
-    subapp["my_value"] = "sub"
+    subapp[my_value] = "sub"
     if "C" in middlewares:
         subapp.middlewares.append(show_app_context("C"))
     subapp.router.add_get("/", make_handler("D"))
@@ -1752,7 +1769,7 @@ async def test_response_with_bodypart(aiohttp_client) -> None:
         await resp.release()
 
 
-async def test_response_with_bodypart_named(aiohttp_client, tmpdir) -> None:
+async def test_response_with_bodypart_named(aiohttp_client, tmp_path) -> None:
     async def handler(request):
         reader = await request.multipart()
         part = await reader.next()
@@ -1762,9 +1779,9 @@ async def test_response_with_bodypart_named(aiohttp_client, tmpdir) -> None:
     app.router.add_post("/", handler)
     client = await aiohttp_client(app)
 
-    f = tmpdir.join("foobar.txt")
+    f = tmp_path / "foobar.txt"
     f.write_text("test", encoding="utf8")
-    with open(str(f), "rb") as fd:
+    with f.open("rb") as fd:
         data = {"file": fd}
         resp = await client.post("/", data=data)
 
@@ -1821,7 +1838,9 @@ async def test_await(aiohttp_server) -> None:
     async def handler(request):
         resp = web.StreamResponse(headers={"content-length": str(4)})
         await resp.prepare(request)
-        with pytest.warns(DeprecationWarning):
+        with pytest.deprecated_call(
+            match=r"^drain method is deprecated, use await resp\.write\(\)$",
+        ):
             await resp.drain()
         await asyncio.sleep(0.01)
         await resp.write(b"test")
@@ -1853,7 +1872,6 @@ async def test_response_context_manager(aiohttp_server) -> None:
     resp = await session.get(server.make_url("/"))
     async with resp:
         assert resp.status == 200
-        assert resp.connection is None
     assert resp.connection is None
 
     await session.close()
@@ -1900,7 +1918,9 @@ async def test_context_manager_close_on_release(aiohttp_server, mocker) -> None:
     async def handler(request):
         resp = web.StreamResponse()
         await resp.prepare(request)
-        with pytest.warns(DeprecationWarning):
+        with pytest.deprecated_call(
+            match=r"^drain method is deprecated, use await resp\.write\(\)$",
+        ):
             await resp.drain()
         await asyncio.sleep(10)
         return resp
@@ -1918,6 +1938,8 @@ async def test_context_manager_close_on_release(aiohttp_server, mocker) -> None:
             assert resp.connection is not None
         assert resp.connection is None
         assert proto.close.called
+
+        await resp.release()  # Trigger handler completion
 
 
 async def test_iter_any(aiohttp_server) -> None:
@@ -2168,4 +2190,39 @@ async def test_stream_response_headers_204(aiohttp_client):
     resp = await client.get("/")
     assert CONTENT_TYPE not in resp.headers
     assert TRANSFER_ENCODING not in resp.headers
+    await resp.release()
+
+
+async def test_httpfound_cookies_302(aiohttp_client: Any) -> None:
+    async def handler(_):
+        resp = web.HTTPFound("/")
+        resp.set_cookie("my-cookie", "cookie-value")
+        raise resp
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    client = await aiohttp_client(app)
+
+    resp = await client.get("/", allow_redirects=False)
+    assert "my-cookie" in resp.cookies
+    await resp.release()
+
+
+@pytest.mark.parametrize("status", (101, 204, 304))
+@pytest.mark.parametrize("version", (HttpVersion10, HttpVersion11))
+async def test_no_body_for_1xx_204_304_responses(
+    aiohttp_client: Any, status: int, version: HttpVersion
+) -> None:
+    """Test no body is present for for 1xx, 204, and 304 responses."""
+
+    async def handler(_):
+        return web.Response(status=status, body=b"should not get to client")
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    client = await aiohttp_client(app, version=version)
+    resp = await client.get("/")
+    assert CONTENT_TYPE not in resp.headers
+    assert TRANSFER_ENCODING not in resp.headers
+    await resp.read() == b""
     await resp.release()

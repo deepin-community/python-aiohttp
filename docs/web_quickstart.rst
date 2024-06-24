@@ -143,6 +143,12 @@ for a ``GET`` request. You can also deny ``HEAD`` requests on a route::
 Here ``handler`` won't be called on ``HEAD`` request and the server
 will respond with ``405: Method Not Allowed``.
 
+.. seealso::
+
+   :ref:`aiohttp-web-peer-disconnection` section explains how handlers
+   behave when a client connection drops and ways to optimize handling
+   of this.
+
 .. _aiohttp-web-resource-and-route:
 
 Resources and Routes
@@ -159,7 +165,7 @@ Resource in turn has at least one *route*.
 
 Route corresponds to handling *HTTP method* by calling *web handler*.
 
-Thus when you add a *route* the *resouce* object is created under the hood.
+Thus when you add a *route* the *resource* object is created under the hood.
 
 The library implementation **merges** all subsequent route additions
 for the same path adding the only resource for all HTTP methods.
@@ -757,3 +763,11 @@ unsupported method and list of allowed methods::
     HTTPMethodNotAllowed(method, allowed_methods, *,
                          headers=None, reason=None,
                          body=None, text=None, content_type=None)
+
+:class:`HTTPUnavailableForLegalReasons` should be constructed with a ``link``
+to yourself (as the entity implementing the blockage), and an explanation for
+the block included in ``text``.::
+
+    HTTPUnavailableForLegalReasons(link, *,
+                                   headers=None, reason=None,
+                                   body=None, text=None, content_type=None)

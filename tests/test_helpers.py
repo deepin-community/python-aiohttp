@@ -3,8 +3,9 @@ import base64
 import datetime
 import gc
 import platform
-import tempfile
-from math import isclose, modf
+import sys
+import weakref
+from math import ceil, modf
 from pathlib import Path
 from unittest import mock
 from urllib.request import getproxies_environment
@@ -14,7 +15,12 @@ from multidict import MultiDict
 from yarl import URL
 
 from aiohttp import helpers
-from aiohttp.helpers import parse_http_date
+from aiohttp.helpers import (
+    method_must_be_empty_body,
+    must_be_empty_body,
+    parse_http_date,
+    should_remove_content_length,
+)
 
 IS_PYPY = platform.python_implementation() == "PyPy"
 
@@ -66,9 +72,19 @@ def test_parse_mimetype(mimetype, expected) -> None:
 # ------------------- guess_filename ----------------------------------
 
 
-def test_guess_filename_with_tempfile() -> None:
-    with tempfile.TemporaryFile() as fp:
+def test_guess_filename_with_file_object(tmp_path) -> None:
+    file_path = tmp_path / "test_guess_filename"
+    with file_path.open("w+b") as fp:
         assert helpers.guess_filename(fp, "no-throw") is not None
+
+
+def test_guess_filename_with_path(tmp_path) -> None:
+    file_path = tmp_path / "test_guess_filename"
+    assert helpers.guess_filename(file_path, "no-throw") is not None
+
+
+def test_guess_filename_with_default() -> None:
+    assert helpers.guess_filename(None, "no-throw") == "no-throw"
 
 
 # ------------------- BasicAuth -----------------------------------
@@ -338,7 +354,19 @@ def test_when_timeout_smaller_second(loop) -> None:
     handle.close()
 
     assert isinstance(when, float)
-    assert isclose(when - timer, 0, abs_tol=0.001)
+    assert when - timer == pytest.approx(0, abs=0.001)
+
+
+def test_when_timeout_smaller_second_with_low_threshold(loop) -> None:
+    timeout = 0.1
+    timer = loop.time() + timeout
+
+    handle = helpers.TimeoutHandle(loop, timeout, 0.01)
+    when = handle.start()._when
+    handle.close()
+
+    assert isinstance(when, int)
+    assert when == ceil(timer)
 
 
 def test_timeout_handle_cb_exc(loop) -> None:
@@ -362,10 +390,7 @@ def test_timer_context_not_cancelled() -> None:
             with ctx:
                 pass
 
-        if helpers.PY_37:
-            assert not m_asyncio.current_task.return_value.cancel.called
-        else:
-            assert not m_asyncio.Task.current_task.return_value.cancel.called
+        assert not m_asyncio.current_task.return_value.cancel.called
 
 
 def test_timer_context_no_task(loop) -> None:
@@ -384,6 +409,16 @@ async def test_weakref_handle(loop) -> None:
     assert cb.test.called
 
 
+async def test_weakref_handle_with_small_threshold(loop) -> None:
+    cb = mock.Mock()
+    loop = mock.Mock()
+    loop.time.return_value = 10
+    helpers.weakref_handle(cb, "test", 0.1, loop, 0.01)
+    loop.call_at.assert_called_with(
+        11, helpers._weakref_handle, (weakref.ref(cb), "test")
+    )
+
+
 async def test_weakref_handle_weak(loop) -> None:
     cb = mock.Mock()
     helpers.weakref_handle(cb, "test", 0.01, loop)
@@ -394,22 +429,65 @@ async def test_weakref_handle_weak(loop) -> None:
 
 async def test_ceil_timeout() -> None:
     async with helpers.ceil_timeout(None) as timeout:
-        assert timeout.deadline is None
+        if sys.version_info >= (3, 11):
+            assert timeout.when() is None
+        else:
+            assert timeout.deadline is None
 
 
 async def test_ceil_timeout_round() -> None:
     async with helpers.ceil_timeout(7.5) as cm:
-        assert cm.deadline is not None
-        frac, integer = modf(cm.deadline)
+        if sys.version_info >= (3, 11):
+            assert cm.when() is not None
+            frac, integer = modf(cm.when())
+        else:
+            assert cm.deadline is not None
+            frac, integer = modf(cm.deadline)
         assert frac == 0
 
 
 async def test_ceil_timeout_small() -> None:
     async with helpers.ceil_timeout(1.1) as cm:
-        assert cm.deadline is not None
-        frac, integer = modf(cm.deadline)
+        if sys.version_info >= (3, 11):
+            assert cm.when() is not None
+            frac, integer = modf(cm.when())
+        else:
+            assert cm.deadline is not None
+            frac, integer = modf(cm.deadline)
         # a chance for exact integer with zero fraction is negligible
         assert frac != 0
+
+
+def test_ceil_call_later_with_small_threshold() -> None:
+    cb = mock.Mock()
+    loop = mock.Mock()
+    loop.time.return_value = 10.1
+    helpers.call_later(cb, 4.5, loop, 1)
+    loop.call_at.assert_called_with(15, cb)
+
+
+def test_ceil_call_later_no_timeout() -> None:
+    cb = mock.Mock()
+    loop = mock.Mock()
+    helpers.call_later(cb, 0, loop)
+    assert not loop.call_at.called
+
+
+async def test_ceil_timeout_none(loop) -> None:
+    async with helpers.ceil_timeout(None) as cm:
+        if sys.version_info >= (3, 11):
+            assert cm.when() is None
+        else:
+            assert cm.deadline is None
+
+
+async def test_ceil_timeout_small_with_overriden_threshold(loop) -> None:
+    async with helpers.ceil_timeout(1.5, ceil_threshold=1) as cm:
+        if sys.version_info >= (3, 11):
+            frac, integer = modf(cm.when())
+        else:
+            frac, integer = modf(cm.deadline)
+        assert frac == 0
 
 
 # -------------------------------- ContentDisposition -------------------
@@ -669,7 +747,6 @@ async def test_set_exception_cancelled(loop) -> None:
 
 
 class TestChainMapProxy:
-    @pytest.mark.skipif(not helpers.PY_36, reason="Requires Python 3.6+")
     def test_inheritance(self) -> None:
         with pytest.raises(TypeError):
 
@@ -765,6 +842,23 @@ def test_parse_http_date(value, expected):
     assert parse_http_date(value) == expected
 
 
+@pytest.mark.parametrize(
+    ["netrc_contents", "expected_username"],
+    [
+        (
+            "machine example.com login username password pass\n",
+            "username",
+        ),
+    ],
+    indirect=("netrc_contents",),
+)
+@pytest.mark.usefixtures("netrc_contents")
+def test_netrc_from_env(expected_username: str):
+    """Test that reading netrc files from env works as expected"""
+    netrc_obj = helpers.netrc_from_env()
+    assert netrc_obj.authenticators("example.com")[0] == expected_username
+
+
 @pytest.fixture
 def protected_dir(tmp_path: Path):
     protected_dir = tmp_path / "protected"
@@ -783,3 +877,87 @@ def test_netrc_from_home_does_not_raise_if_access_denied(
     monkeypatch.delenv("NETRC", raising=False)
 
     helpers.netrc_from_env()
+
+
+@pytest.mark.parametrize(
+    ["netrc_contents", "expected_auth"],
+    [
+        (
+            "machine example.com login username password pass\n",
+            helpers.BasicAuth("username", "pass"),
+        ),
+        (
+            "machine example.com account username password pass\n",
+            helpers.BasicAuth("username", "pass"),
+        ),
+        (
+            "machine example.com password pass\n",
+            helpers.BasicAuth("", "pass"),
+        ),
+    ],
+    indirect=("netrc_contents",),
+)
+@pytest.mark.usefixtures("netrc_contents")
+def test_basicauth_present_in_netrc(
+    expected_auth: helpers.BasicAuth,
+):
+    """Test that netrc file contents are properly parsed into BasicAuth tuples"""
+    netrc_obj = helpers.netrc_from_env()
+
+    assert expected_auth == helpers.basicauth_from_netrc(netrc_obj, "example.com")
+
+
+@pytest.mark.parametrize(
+    ["netrc_contents"],
+    [
+        ("",),
+    ],
+    indirect=("netrc_contents",),
+)
+@pytest.mark.usefixtures("netrc_contents")
+def test_read_basicauth_from_empty_netrc():
+    """Test that an error is raised if netrc doesn't have an entry for our host"""
+    netrc_obj = helpers.netrc_from_env()
+
+    with pytest.raises(
+        LookupError, match="No entry for example.com found in the `.netrc` file."
+    ):
+        helpers.basicauth_from_netrc(netrc_obj, "example.com")
+
+
+def test_method_must_be_empty_body():
+    """Test that HEAD is the only method that unequivocally must have an empty body."""
+    assert method_must_be_empty_body("HEAD") is True
+    # CONNECT is only empty on a successful response
+    assert method_must_be_empty_body("CONNECT") is False
+
+
+def test_should_remove_content_length_is_subset_of_must_be_empty_body():
+    """Test should_remove_content_length is always a subset of must_be_empty_body."""
+    assert should_remove_content_length("GET", 101) is True
+    assert must_be_empty_body("GET", 101) is True
+
+    assert should_remove_content_length("GET", 102) is True
+    assert must_be_empty_body("GET", 102) is True
+
+    assert should_remove_content_length("GET", 204) is True
+    assert must_be_empty_body("GET", 204) is True
+
+    assert should_remove_content_length("GET", 204) is True
+    assert must_be_empty_body("GET", 204) is True
+
+    assert should_remove_content_length("GET", 200) is False
+    assert must_be_empty_body("GET", 200) is False
+
+    assert should_remove_content_length("HEAD", 200) is False
+    assert must_be_empty_body("HEAD", 200) is True
+
+    # CONNECT is only empty on a successful response
+    assert should_remove_content_length("CONNECT", 200) is True
+    assert must_be_empty_body("CONNECT", 200) is True
+
+    assert should_remove_content_length("CONNECT", 201) is True
+    assert must_be_empty_body("CONNECT", 201) is True
+
+    assert should_remove_content_length("CONNECT", 300) is False
+    assert must_be_empty_body("CONNECT", 300) is False

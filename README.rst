@@ -40,7 +40,7 @@ Key Features
 - Supports both client and server side of HTTP protocol.
 - Supports both client and server Web-Sockets out-of-the-box and avoids
   Callback Hell.
-- Provides Web-server with middlewares and plugable routing.
+- Provides Web-server with middleware and pluggable routing.
 
 
 Getting started
@@ -67,7 +67,7 @@ To get something from the web:
               html = await response.text()
               print("Body:", html[:15], "...")
 
-    asyncio.run(main())
+  asyncio.run(main())
 
 This prints:
 
@@ -146,7 +146,7 @@ Feel free to make a Pull Request for adding your link to these pages!
 Communication channels
 ======================
 
-*aio-libs discourse group*: https://aio-libs.discourse.group
+*aio-libs Discussions*: https://github.com/aio-libs/aiohttp/discussions
 
 *gitter chat* https://gitter.im/aio-libs/Lobby
 
@@ -157,25 +157,20 @@ Please add *aiohttp* tag to your question there.
 Requirements
 ============
 
-- Python >= 3.6
 - async-timeout_
 - attrs_
-- charset-normalizer_
 - multidict_
 - yarl_
 - frozenlist_
 
-Optionally you may install the cChardet_ and aiodns_ libraries (highly
-recommended for sake of speed).
+Optionally you may install the aiodns_ library (highly recommended for sake of speed).
 
-.. _charset-normalizer: https://pypi.org/project/charset-normalizer
 .. _aiodns: https://pypi.python.org/pypi/aiodns
 .. _attrs: https://github.com/python-attrs/attrs
 .. _multidict: https://pypi.python.org/pypi/multidict
 .. _frozenlist: https://pypi.org/project/frozenlist/
 .. _yarl: https://pypi.python.org/pypi/yarl
 .. _async-timeout: https://pypi.python.org/pypi/async_timeout
-.. _cChardet: https://pypi.python.org/pypi/cchardet
 
 License
 =======

@@ -18,6 +18,12 @@ import re
 from pathlib import Path
 
 PROJECT_ROOT_DIR = Path(__file__).parents[1].resolve()
+IS_RELEASE_ON_RTD = (
+    os.getenv("READTHEDOCS", "False") == "True"
+    and os.environ["READTHEDOCS_VERSION_TYPE"] == "tag"
+)
+if IS_RELEASE_ON_RTD:
+    tags.add("is_release")
 
 _docs_path = os.path.dirname(__file__)
 _version_path = os.path.abspath(
@@ -52,7 +58,6 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.viewcode",
     # Third-party extensions:
-    "sphinxcontrib.asyncio",
     "sphinxcontrib.blockdiag",
     "sphinxcontrib.towncrier",  # provides `towncrier-draft-entries` directive
 ]
@@ -76,6 +81,7 @@ intersphinx_mapping = {
     "aiohttpremotes": ("https://aiohttp-remotes.readthedocs.io/en/stable/", None),
     "aiohttpsession": ("https://aiohttp-session.readthedocs.io/en/stable/", None),
     "aiohttpdemos": ("https://aiohttp-demos.readthedocs.io/en/latest/", None),
+    "aiojobs": ("https://aiojobs.readthedocs.io/en/stable/", None),
 }
 
 # Add any paths that contain templates here, relative to this directory.
@@ -199,12 +205,6 @@ html_theme_options = {
             "target": f"https://badge.fury.io/py/{project}",
             "height": "20",
             "alt": "Latest PyPI package version",
-        },
-        {
-            "image": f"https://img.shields.io/discourse/status?server=https%3A%2F%2F{github_repo_org}.discourse.group",
-            "target": f"https://{github_repo_org}.discourse.group",
-            "height": "20",
-            "alt": "Discourse status",
         },
         {
             "image": "https://badges.gitter.im/Join%20Chat.svg",
@@ -438,6 +438,7 @@ nitpick_ignore = [
     ("py:exc", "HTTPNotFound"),  # undocumented
     ("py:exc", "HTTPMethodNotAllowed"),  # undocumented
     ("py:class", "HTTPMethodNotAllowed"),  # undocumented
+    ("py:class", "HTTPUnavailableForLegalReasons"),  # undocumented
 ]
 
 # -- Options for towncrier_draft extension -----------------------------------
