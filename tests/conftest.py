@@ -1,15 +1,20 @@
 import asyncio
+import base64
 import os
 import socket
 import ssl
 import sys
-from hashlib import md5, sha256
+from hashlib import md5, sha1, sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
+from unittest import mock
 from uuid import uuid4
 
 import pytest
 
+from aiohttp.client_proto import ResponseHandler
+from aiohttp.http import WS_KEY
 from aiohttp.test_utils import loop_context
 
 try:
@@ -168,6 +173,17 @@ def pipe_name():
 
 
 @pytest.fixture
+def create_mocked_conn(loop: Any):
+    def _proto_factory(conn_closing_result=None, **kwargs):
+        proto = mock.create_autospec(ResponseHandler, **kwargs)
+        proto.closed = loop.create_future()
+        proto.closed.set_result(conn_closing_result)
+        return proto
+
+    yield _proto_factory
+
+
+@pytest.fixture
 def selector_loop():
     policy = asyncio.WindowsSelectorEventLoopPolicy()
     asyncio.set_event_loop_policy(policy)
@@ -197,3 +213,28 @@ def netrc_contents(
     monkeypatch.setenv("NETRC", str(netrc_file_path))
 
     return netrc_file_path
+
+
+@pytest.fixture
+def start_connection():
+    with mock.patch(
+        "aiohttp.connector.aiohappyeyeballs.start_connection",
+        autospec=True,
+        spec_set=True,
+    ) as start_connection_mock:
+        yield start_connection_mock
+
+
+@pytest.fixture
+def key_data():
+    return os.urandom(16)
+
+
+@pytest.fixture
+def key(key_data: Any):
+    return base64.b64encode(key_data)
+
+
+@pytest.fixture
+def ws_key(key: Any):
+    return base64.b64encode(sha1(key + WS_KEY).digest()).decode()

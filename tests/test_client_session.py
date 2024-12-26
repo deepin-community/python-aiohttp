@@ -4,8 +4,9 @@ import gc
 import io
 import json
 from http.cookies import SimpleCookie
-from typing import Any, List
+from typing import Any, Awaitable, Callable, List
 from unittest import mock
+from uuid import uuid4
 
 import pytest
 from multidict import CIMultiDict, MultiDict
@@ -15,10 +16,13 @@ from yarl import URL
 import aiohttp
 from aiohttp import client, hdrs, web
 from aiohttp.client import ClientSession
+from aiohttp.client_proto import ResponseHandler
 from aiohttp.client_reqrep import ClientRequest
-from aiohttp.connector import BaseConnector, TCPConnector
+from aiohttp.connector import BaseConnector, Connection, TCPConnector, UnixConnector
 from aiohttp.helpers import DEBUG
+from aiohttp.http import RawResponseMessage
 from aiohttp.test_utils import make_mocked_coro
+from aiohttp.tracing import Trace
 
 
 @pytest.fixture
@@ -471,7 +475,124 @@ async def test_close_conn_on_error(create_session) -> None:
         c.__del__()
 
 
-async def test_cookie_jar_usage(loop, aiohttp_client) -> None:
+@pytest.mark.parametrize("protocol", ["http", "https", "ws", "wss"])
+async def test_ws_connect_allowed_protocols(
+    create_session: Any,
+    create_mocked_conn: Any,
+    protocol: str,
+    ws_key: Any,
+    key_data: Any,
+) -> None:
+    resp = mock.create_autospec(aiohttp.ClientResponse)
+    resp.status = 101
+    resp.headers = {
+        hdrs.UPGRADE: "websocket",
+        hdrs.CONNECTION: "upgrade",
+        hdrs.SEC_WEBSOCKET_ACCEPT: ws_key,
+    }
+    resp.url = URL(f"{protocol}://example")
+    resp.cookies = SimpleCookie()
+    resp.start = mock.AsyncMock()
+
+    req = mock.create_autospec(aiohttp.ClientRequest, spec_set=True)
+    req_factory = mock.Mock(return_value=req)
+    req.send = mock.AsyncMock(return_value=resp)
+    # BaseConnector allows all high level protocols by default
+    connector = BaseConnector()
+
+    session = await create_session(connector=connector, request_class=req_factory)
+
+    connections = []
+    original_connect = session._connector.connect
+
+    async def connect(req, traces, timeout):
+        conn = await original_connect(req, traces, timeout)
+        connections.append(conn)
+        return conn
+
+    async def create_connection(req, traces, timeout):
+        return create_mocked_conn()
+
+    connector = session._connector
+    with mock.patch.object(connector, "connect", connect), mock.patch.object(
+        connector, "_create_connection", create_connection
+    ), mock.patch.object(connector, "_release"), mock.patch(
+        "aiohttp.client.os"
+    ) as m_os:
+        m_os.urandom.return_value = key_data
+        await session.ws_connect(f"{protocol}://example")
+
+    # normally called during garbage collection.  triggers an exception
+    # if the connection wasn't already closed
+    for c in connections:
+        c.close()
+        c.__del__()
+
+    await session.close()
+
+
+@pytest.mark.parametrize("protocol", ["http", "https", "ws", "wss", "unix"])
+async def test_ws_connect_unix_socket_allowed_protocols(
+    create_session: Callable[..., Awaitable[ClientSession]],
+    create_mocked_conn: Callable[[], ResponseHandler],
+    protocol: str,
+    ws_key: bytes,
+    key_data: bytes,
+) -> None:
+    resp = mock.create_autospec(aiohttp.ClientResponse)
+    resp.status = 101
+    resp.headers = {
+        hdrs.UPGRADE: "websocket",
+        hdrs.CONNECTION: "upgrade",
+        hdrs.SEC_WEBSOCKET_ACCEPT: ws_key,
+    }
+    resp.url = URL(f"{protocol}://example")
+    resp.cookies = SimpleCookie()
+    resp.start = mock.AsyncMock()
+
+    req = mock.create_autospec(aiohttp.ClientRequest, spec_set=True)
+    req_factory = mock.Mock(return_value=req)
+    req.send = mock.AsyncMock(return_value=resp)
+    # UnixConnector allows all high level protocols by default and unix sockets
+    session = await create_session(
+        connector=UnixConnector(path=""), request_class=req_factory
+    )
+
+    connections = []
+    assert session._connector is not None
+    original_connect = session._connector.connect
+
+    async def connect(
+        req: ClientRequest, traces: List[Trace], timeout: aiohttp.ClientTimeout
+    ) -> Connection:
+        conn = await original_connect(req, traces, timeout)
+        connections.append(conn)
+        return conn
+
+    async def create_connection(
+        req: object, traces: object, timeout: object
+    ) -> ResponseHandler:
+        return create_mocked_conn()
+
+    connector = session._connector
+    with mock.patch.object(connector, "connect", connect), mock.patch.object(
+        connector, "_create_connection", create_connection
+    ), mock.patch.object(connector, "_release"), mock.patch(
+        "aiohttp.client.os"
+    ) as m_os:
+        m_os.urandom.return_value = key_data
+        await session.ws_connect(f"{protocol}://example")
+
+    # normally called during garbage collection.  triggers an exception
+    # if the connection wasn't already closed
+    for c in connections:
+        c.close()
+        c.__del__()
+
+    await session.close()
+
+
+async def test_cookie_jar_usage(loop: Any, aiohttp_client: Any) -> None:
     req_url = None
 
     jar = mock.Mock()
@@ -792,7 +913,9 @@ async def test_client_session_timeout_args(loop) -> None:
 
     with pytest.warns(DeprecationWarning):
         session2 = ClientSession(loop=loop, read_timeout=20 * 60, conn_timeout=30 * 60)
-    assert session2._timeout == client.ClientTimeout(total=20 * 60, connect=30 * 60)
+    assert session2._timeout == client.ClientTimeout(
+        total=20 * 60, connect=30 * 60, sock_connect=client.DEFAULT_TIMEOUT.sock_connect
+    )
 
     with pytest.raises(ValueError):
         ClientSession(
@@ -814,13 +937,31 @@ async def test_client_session_timeout_default_args(loop) -> None:
     await session1.close()
 
 
-async def test_client_session_timeout_zero() -> None:
+async def test_client_session_timeout_zero(
+    create_mocked_conn: Callable[[], ResponseHandler]
+) -> None:
+    async def create_connection(
+        req: object, traces: object, timeout: object
+    ) -> ResponseHandler:
+        await asyncio.sleep(0.01)
+        conn = create_mocked_conn()
+        conn.connected = True  # type: ignore[misc]
+        assert conn.transport is not None
+        conn.transport.is_closing.return_value = False  # type: ignore[attr-defined]
+        msg = mock.create_autospec(RawResponseMessage, spec_set=True, code=200)
+        conn.read.return_value = (msg, mock.Mock())  # type: ignore[attr-defined]
+        return conn
+
     timeout = client.ClientTimeout(total=10, connect=0, sock_connect=0, sock_read=0)
-    try:
-        async with ClientSession(timeout=timeout) as session:
-            await session.get("http://example.com")
-    except asyncio.TimeoutError:
-        pytest.fail("0 should disable timeout.")
+    async with ClientSession(timeout=timeout) as session:
+        with mock.patch.object(
+            session._connector, "_create_connection", create_connection
+        ):
+            try:
+                resp = await session.get("http://example.com")
+            except asyncio.TimeoutError:  # pragma: no cover
+                pytest.fail("0 should disable timeout.")
+            resp.close()
 
 
 async def test_client_session_timeout_bad_argument() -> None:
@@ -895,3 +1036,23 @@ async def test_instantiation_with_invalid_timeout_value(loop):
         ClientSession(timeout=1)
     # should not have "Unclosed client session" warning
     assert not logs
+
+
+@pytest.mark.parametrize(
+    ("outer_name", "inner_name"),
+    [
+        ("skip_auto_headers", "_skip_auto_headers"),
+        ("auth", "_default_auth"),
+        ("json_serialize", "_json_serialize"),
+        ("connector_owner", "_connector_owner"),
+        ("raise_for_status", "_raise_for_status"),
+        ("trust_env", "_trust_env"),
+        ("trace_configs", "_trace_configs"),
+    ],
+)
+async def test_properties(
+    session: ClientSession, outer_name: str, inner_name: str
+) -> None:
+    value = uuid4()
+    setattr(session, inner_name, value)
+    assert value == getattr(session, outer_name)

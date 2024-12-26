@@ -239,6 +239,11 @@ def test_make_mocked_request_content() -> None:
     assert req.content is payload
 
 
+async def test_make_mocked_request_empty_payload() -> None:
+    req = make_mocked_request("GET", "/")
+    assert await req.read() == b""
+
+
 def test_make_mocked_request_transport() -> None:
     transport = mock.Mock()
     req = make_mocked_request("GET", "/", transport=transport)
@@ -259,7 +264,7 @@ async def test_test_client_props(loop) -> None:
 
 async def test_test_client_raw_server_props(loop) -> None:
     async def hello(request):
-        return web.Response(body=_hello_world_bytes)
+        return web.Response()  # pragma: no cover
 
     client = _TestClient(_RawTestServer(hello, host="127.0.0.1", loop=loop), loop=loop)
     assert client.host == "127.0.0.1"
@@ -366,3 +371,15 @@ async def test_base_test_server_socket_factory(
         pass
 
     assert factory_called
+
+
+@pytest.mark.parametrize(
+    ("hostname", "expected_host"),
+    [("127.0.0.1", "127.0.0.1"), ("localhost", "127.0.0.1"), ("::1", "::1")],
+)
+async def test_test_server_hostnames(hostname, expected_host, loop) -> None:
+    app = _create_example_app()
+    server = _TestServer(app, host=hostname, loop=loop)
+    async with server:
+        pass
+    assert server.host == expected_host

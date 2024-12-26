@@ -6,7 +6,7 @@ from typing import Callable
 from unittest import mock
 
 import pytest
-from multidict import CIMultiDict
+from multidict import CIMultiDict, CIMultiDictProxy
 from yarl import URL
 
 import aiohttp
@@ -423,6 +423,36 @@ async def test_text_bad_encoding(loop, session) -> None:
     assert response._connection is None
 
 
+async def test_text_badly_encoded_encoding_header(loop, session) -> None:
+    session._resolve_charset = lambda *_: "utf-8"
+    response = ClientResponse(
+        "get",
+        URL("http://def-cl-resp.org"),
+        request_info=mock.Mock(),
+        writer=WriterMock(),
+        continue100=None,
+        timer=TimerNoop(),
+        traces=[],
+        loop=loop,
+        session=session,
+    )
+
+    def side_effect(*args: object, **kwargs: object):
+        fut = loop.create_future()
+        fut.set_result(b"foo")
+        return fut
+
+    h = {"Content-Type": "text/html; charset=\udc81gutf-8\udc81\udc8d"}
+    response._headers = CIMultiDictProxy(CIMultiDict(h))
+    content = response.content = mock.Mock()
+    content.read.side_effect = side_effect
+
+    await response.read()
+    encoding = response.get_encoding()
+
+    assert encoding == "utf-8"
+
+
 async def test_text_custom_encoding(loop, session) -> None:
     response = ClientResponse(
         "get",
@@ -659,11 +689,13 @@ async def test_json_invalid_content_type(loop, session) -> None:
     )
     response._headers = {"Content-Type": "data/octet-stream"}
     response._body = b""
+    response.status = 500
 
     with pytest.raises(aiohttp.ContentTypeError) as info:
         await response.json()
 
     assert info.value.request_info == response.request_info
+    assert info.value.status == 500
 
 
 async def test_json_no_content(loop, session) -> None:

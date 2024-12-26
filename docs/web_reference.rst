@@ -510,7 +510,6 @@ and :ref:`aiohttp-web-signals` handlers.
           required work will be processed by :mod:`aiohttp.web`
           internal machinery.
 
-
 .. class:: Request
 
    A request used for receiving request's information by *web handler*.
@@ -925,6 +924,31 @@ and :ref:`aiohttp-web-signals` handlers::
       :attr:`~aiohttp.StreamResponse.body`, represented as :class:`str`.
 
 
+.. class:: FileResponse(*, path, chunk_size=256*1024, status=200, reason=None, headers=None)
+
+   The response class used to send files, inherited from :class:`StreamResponse`.
+
+   Supports the ``Content-Range`` and ``If-Range`` HTTP Headers in requests.
+
+   The actual :attr:`body` sending happens in overridden :meth:`~StreamResponse.prepare`.
+
+   :param path: Path to file. Accepts both :class:`str` and :class:`pathlib.Path`.
+   :param int chunk_size: Chunk size in bytes which will be passed into
+                          :meth:`io.RawIOBase.read` in the event that the
+                          ``sendfile`` system call is not supported.
+
+   :param int status: HTTP status code, ``200`` by default.
+
+   :param str reason: HTTP reason. If param is ``None`` reason will be
+                      calculated basing on *status*
+                      parameter. Otherwise pass :class:`str` with
+                      arbitrary *status* explanation..
+
+   :param collections.abc.Mapping headers: HTTP headers that should be added to
+                           response's ones. The ``Content-Type`` response header
+                           will be overridden if provided.
+
+
 .. class:: WebSocketResponse(*, timeout=10.0, receive_timeout=None, \
                              autoclose=True, autoping=True, heartbeat=None, \
                              protocols=(), compress=True, max_msg_size=4194304)
@@ -938,8 +962,8 @@ and :ref:`aiohttp-web-signals` handlers::
    :meth:`receive` and others.
 
    To enable back-pressure from slow websocket clients treat methods
-   :meth:`ping()`, :meth:`pong()`, :meth:`send_str()`,
-   :meth:`send_bytes()`, :meth:`send_json()` as coroutines.  By
+   :meth:`ping`, :meth:`pong`, :meth:`send_str`,
+   :meth:`send_bytes`, :meth:`send_json` as coroutines.  By
    default write buffer size is set to 64k.
 
    :param bool autoping: Automatically send
@@ -1625,7 +1649,7 @@ Application and Router
       :async:
 
       A :ref:`coroutine<coroutine>` that should be called on
-      server stopping but before :meth:`cleanup()`.
+      server stopping but before :meth:`cleanup`.
 
       The purpose of the method is calling :attr:`on_shutdown` signal
       handlers.
@@ -1846,14 +1870,18 @@ Application and Router
       system call even if the platform supports it. This can be accomplished by
       by setting environment variable ``AIOHTTP_NOSENDFILE=1``.
 
-      If a gzip version of the static content exists at file path + ``.gz``, it
-      will be used for the response.
+      If a Brotli or gzip compressed version of the static content exists at
+      the requested path with the ``.br`` or ``.gz`` extension, it will be used
+      for the response. Brotli will be preferred over gzip if both files exist.
 
       .. warning::
 
          Use :meth:`add_static` for development only. In production,
          static content should be processed by web servers like *nginx*
-         or *apache*.
+         or *apache*. Such web servers will be able to provide significantly
+         better performance and security for static assets. Several past security
+         vulnerabilities in aiohttp only affected applications using
+         :meth:`add_static`.
 
       :param str prefix: URL path prefix for handled static files
 
@@ -1972,19 +2000,37 @@ unique *name* and at least one :term:`route`.
 
 :term:`web-handler` lookup is performed in the following way:
 
-1. Router iterates over *resources* one-by-one.
-2. If *resource* matches to requested URL the resource iterates over
-   own *routes*.
-3. If route matches to requested HTTP method (or ``'*'`` wildcard) the
-   route's handler is used as found :term:`web-handler`. The lookup is
-   finished.
-4. Otherwise router tries next resource from the *routing table*.
-5. If the end of *routing table* is reached and no *resource* /
-   *route* pair found the *router* returns special :class:`~aiohttp.abc.AbstractMatchInfo`
+1. The router splits the URL and checks the index from longest to shortest.
+   For example, '/one/two/three' will first check the index for
+   '/one/two/three', then '/one/two' and finally '/'.
+2. If the URL part is found in the index, the list of routes for
+   that URL part is iterated over. If a route matches to requested HTTP
+   method (or ``'*'`` wildcard) the route's handler is used as the chosen
+   :term:`web-handler`. The lookup is finished.
+3. If the route is not found in the index, the router tries to find
+   the route in the list of :class:`~aiohttp.web.MatchedSubAppResource`,
+   (current only created from :meth:`~aiohttp.web.Application.add_domain`),
+   and will iterate over the list of
+   :class:`~aiohttp.web.MatchedSubAppResource` in a linear fashion
+   until a match is found.
+4. If no *resource* / *route* pair was found, the *router*
+   returns the special :class:`~aiohttp.abc.AbstractMatchInfo`
    instance with :attr:`aiohttp.abc.AbstractMatchInfo.http_exception` is not ``None``
    but :exc:`HTTPException` with  either *HTTP 404 Not Found* or
    *HTTP 405 Method Not Allowed* status code.
    Registered :meth:`~aiohttp.abc.AbstractMatchInfo.handler` raises this exception on call.
+
+Fixed paths are preferred over variable paths. For example,
+if you have two routes ``/a/b`` and ``/a/{name}``, then the first
+route will always be preferred over the second one.
+
+If there are multiple dynamic paths with the same fixed prefix,
+they will be resolved in order of registration.
+
+For example, if you have two dynamic routes that are prefixed
+with the fixed ``/users`` path such as ``/users/{x}/{y}/z`` and
+``/users/{x}/y/z``, the first one will be preferred over the
+second one.
 
 User should never instantiate resource classes but give it by
 :meth:`UrlDispatcher.add_resource` call.
@@ -2007,7 +2053,10 @@ Resource classes hierarchy::
      Resource
        PlainResource
        DynamicResource
+     PrefixResource
        StaticResource
+       PrefixedSubAppResource
+          MatchedSubAppResource
 
 
 .. class:: AbstractResource
@@ -2688,7 +2737,8 @@ application on specific TCP or Unix socket, e.g.::
    :param bool handle_signals: add signal handlers for
                                :data:`signal.SIGINT` and
                                :data:`signal.SIGTERM` (``False`` by
-                               default).
+                               default). These handlers will raise
+                               :exc:`GracefulExit`.
 
    :param kwargs: named parameters to pass into
                   web protocol.
@@ -2761,7 +2811,8 @@ application on specific TCP or Unix socket, e.g.::
    :param bool handle_signals: add signal handlers for
                                :data:`signal.SIGINT` and
                                :data:`signal.SIGTERM` (``False`` by
-                               default).
+                               default). These handlers will raise
+                               :exc:`GracefulExit`.
 
    :param kwargs: named parameters to pass into
                   web protocol.
@@ -2891,6 +2942,16 @@ application on specific TCP or Unix socket, e.g.::
                        connections, see :meth:`socket.socket.listen` for details.
 
                        ``128`` by default.
+
+.. exception:: GracefulExit
+
+   Raised by signal handlers for :data:`signal.SIGINT` and :data:`signal.SIGTERM`
+   defined in :class:`AppRunner` and :class:`ServerRunner`
+   when ``handle_signals`` is set to ``True``.
+
+   Inherited from :exc:`SystemExit`,
+   which exits with error code ``1`` if not handled.
+
 
 Utilities
 ---------
