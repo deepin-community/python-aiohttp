@@ -1,3 +1,5 @@
 0002-Add-shebang-to-examples.patch
 0003-remove-forkme-button-from-docs-to-prevent-privacy-br.patch
 0004-remove-sphinxcontrib.towncrier-for-now.patch
+0005-avoid-aiohttp-theme.patch
+0006-use-local-documentation.patch

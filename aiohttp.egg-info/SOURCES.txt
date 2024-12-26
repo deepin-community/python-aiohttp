@@ -40,7 +40,6 @@ aiohttp/http_exceptions.py
 aiohttp/http_parser.py
 aiohttp/http_websocket.py
 aiohttp/http_writer.py
-aiohttp/locks.py
 aiohttp/log.py
 aiohttp/multipart.py
 aiohttp/payload.py
@@ -177,8 +176,6 @@ requirements/runtime-deps.txt
 requirements/sync-direct-runtime-deps.py
 requirements/test.in
 requirements/test.txt
-requirements/typing-extensions.in
-requirements/typing-extensions.txt
 requirements/.hash/cython.txt.hash
 tests/aiohttp.jpg
 tests/aiohttp.png
@@ -208,7 +205,6 @@ tests/test_http_exceptions.py
 tests/test_http_parser.py
 tests/test_http_writer.py
 tests/test_imports.py
-tests/test_locks.py
 tests/test_loop.py
 tests/test_multipart.py
 tests/test_multipart_helpers.py

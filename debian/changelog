@@ -1,3 +1,78 @@
+python-aiohttp (3.10.10-2) unstable; urgency=medium
+
+  * Team upload.
+  * (Build-)depend on python3-yarl (>= 1.12.0) (closes: #1086658).
+
+ -- Colin Watson <cjwatson@debian.org>  Wed, 13 Nov 2024 14:31:21 +0000
+
+python-aiohttp (3.10.10-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Piotr Ożarowski <piotr@debian.org>  Tue, 29 Oct 2024 12:17:05 +0100
+
+python-aiohttp (3.10.8-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Piotr Ożarowski <piotr@debian.org>  Tue, 01 Oct 2024 16:05:56 +0200
+
+python-aiohttp (3.10.6-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Piotr Ożarowski <piotr@debian.org>  Fri, 27 Sep 2024 16:27:09 +0200
+
+python-aiohttp (3.10.5-1) unstable; urgency=medium
+
+  * New upstream release
+
+ -- Piotr Ożarowski <piotr@debian.org>  Sat, 24 Aug 2024 09:30:57 +0200
+
+python-aiohttp (3.10.4-1) unstable; urgency=medium
+
+  * Team upload.
+  * New upstream release.
+
+ -- Colin Watson <cjwatson@debian.org>  Mon, 19 Aug 2024 11:36:35 +0100
+
+python-aiohttp (3.10.3-3) unstable; urgency=medium
+
+  * Team upload.
+  * Use local Sphinx inventories where available; ignore other missing
+    references.
+
+ -- Colin Watson <cjwatson@debian.org>  Sun, 18 Aug 2024 13:50:33 +0100
+
+python-aiohttp (3.10.3-2) unstable; urgency=medium
+
+  * Team upload.
+  * Upload to unstable.
+
+ -- Colin Watson <cjwatson@debian.org>  Thu, 15 Aug 2024 16:45:04 +0100
+
+python-aiohttp (3.10.3-1) experimental; urgency=medium
+
+  * Rework build to avoid needing to filter out *.egg-info from upstream.
+  * Fix documentation build.
+  * New upstream release.
+
+ -- Colin Watson <cjwatson@debian.org>  Wed, 14 Aug 2024 18:19:39 +0100
+
+python-aiohttp (3.10.1-1) experimental; urgency=medium
+
+  * Team upload.
+  * New upstream release.
+
+ -- Colin Watson <cjwatson@debian.org>  Mon, 05 Aug 2024 15:14:44 +0100
+
+python-aiohttp (3.10.0-1) experimental; urgency=medium
+
+  * Team upload.
+  * New upstream release.
+
+ -- Colin Watson <cjwatson@debian.org>  Sun, 04 Aug 2024 19:05:16 +0100
+
 python-aiohttp (3.9.5-1) unstable; urgency=medium
 
   * Team upload.

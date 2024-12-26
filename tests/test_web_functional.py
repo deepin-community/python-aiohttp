@@ -3,8 +3,9 @@ import io
 import json
 import pathlib
 import socket
+import sys
 import zlib
-from typing import Any, Optional
+from typing import Any, NoReturn, Optional
 from unittest import mock
 
 import pytest
@@ -22,8 +23,10 @@ from aiohttp import (
     web,
 )
 from aiohttp.hdrs import CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING
+from aiohttp.pytest_plugin import AiohttpClient
 from aiohttp.test_utils import make_mocked_coro
 from aiohttp.typedefs import Handler
+from aiohttp.web_protocol import RequestHandler
 
 try:
     import brotlicffi as brotli
@@ -101,12 +104,8 @@ async def test_handler_returns_not_response(aiohttp_server, aiohttp_client) -> N
     server = await aiohttp_server(app, logger=logger)
     client = await aiohttp_client(server)
 
-    with pytest.raises(aiohttp.ServerDisconnectedError):
-        await client.get("/")
-
-    logger.exception.assert_called_with(
-        "Unhandled runtime exception", exc_info=mock.ANY
-    )
+    async with client.get("/") as resp:
+        assert resp.status == 500
 
 
 async def test_handler_returns_none(aiohttp_server, aiohttp_client) -> None:
@@ -121,13 +120,22 @@ async def test_handler_returns_none(aiohttp_server, aiohttp_client) -> None:
     server = await aiohttp_server(app, logger=logger)
     client = await aiohttp_client(server)
 
-    with pytest.raises(aiohttp.ServerDisconnectedError):
-        await client.get("/")
+    async with client.get("/") as resp:
+        assert resp.status == 500
 
-    # Actual error text is placed in exc_info
-    logger.exception.assert_called_with(
-        "Unhandled runtime exception", exc_info=mock.ANY
-    )
+
+async def test_handler_returns_not_response_after_100expect(
+    aiohttp_server, aiohttp_client
+) -> None:
+    async def handler(request: web.Request) -> NoReturn:
+        raise Exception("foo")
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    client = await aiohttp_client(app)
+
+    async with client.get("/", expect100=True) as resp:
+        assert resp.status == 500
 
 
 async def test_head_returns_empty_body(aiohttp_client) -> None:
@@ -148,6 +156,21 @@ async def test_head_returns_empty_body(aiohttp_client) -> None:
     assert resp.headers["Content-Length"] == "4"
 
 
+@pytest.mark.parametrize("status", (201, 204, 404))
+async def test_default_content_type_no_body(aiohttp_client: Any, status: int) -> None:
+    async def handler(request):
+        return web.Response(status=status)
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    client = await aiohttp_client(app)
+
+    async with client.get("/") as resp:
+        assert resp.status == status
+        assert await resp.read() == b""
+        assert "Content-Type" not in resp.headers
+
+
 async def test_response_before_complete(aiohttp_client: Any) -> None:
     async def handler(request):
         return web.Response(body=b"OK")
@@ -166,8 +189,42 @@ async def test_response_before_complete(aiohttp_client: Any) -> None:
     await resp.release()
 
 
-async def test_post_form(aiohttp_client) -> None:
-    async def handler(request):
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Needs Task.cancelling()")
+async def test_cancel_shutdown(aiohttp_client: AiohttpClient) -> None:
+    async def handler(request: web.Request) -> web.Response:
+        t = asyncio.create_task(request.protocol.shutdown())
+        # Ensure it's started waiting
+        await asyncio.sleep(0)
+
+        t.cancel()
+        # Cancellation should not be suppressed
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+        # Repeat for second waiter in shutdown()
+        with mock.patch.object(request.protocol, "_request_in_progress", False):
+            with mock.patch.object(request.protocol, "_current_request", None):
+                t = asyncio.create_task(request.protocol.shutdown())
+                await asyncio.sleep(0)
+
+                t.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await t
+
+        return web.Response(body=b"OK")
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    client = await aiohttp_client(app)
+
+    async with client.get("/") as resp:
+        assert resp.status == 200
+        txt = await resp.text()
+        assert txt == "OK"
+
+
+async def test_post_form(aiohttp_client: AiohttpClient) -> None:
+    async def handler(request: web.Request) -> web.Response:
         data = await request.post()
         assert {"a": "1", "b": "2", "c": ""} == data
         return web.Response(body=b"OK")
@@ -2226,3 +2283,49 @@ async def test_no_body_for_1xx_204_304_responses(
     assert TRANSFER_ENCODING not in resp.headers
     await resp.read() == b""
     await resp.release()
+
+
+async def test_keepalive_race_condition(aiohttp_client: Any) -> None:
+    protocol = None
+    orig_data_received = RequestHandler.data_received
+
+    def delay_received(self, data: bytes) -> None:
+        """Emulate race condition.
+
+        The keepalive callback needs to be called between data_received() and
+        when start() resumes from the waiter set within data_received().
+        """
+        data = orig_data_received(self, data)
+        if protocol is None:  # First request creating the keepalive connection.
+            return data
+
+        assert self is protocol
+        assert protocol._keepalive_handle is not None
+        # Cancel existing callback that would run at some point in future.
+        protocol._keepalive_handle.cancel()
+        protocol._keepalive_handle = None
+
+        # Set next run time into the past and run callback manually.
+        protocol._next_keepalive_close_time = asyncio.get_running_loop().time() - 1
+        protocol._process_keepalive()
+
+        return data
+
+    async def handler(request: web.Request) -> web.Response:
+        nonlocal protocol
+        protocol = request.protocol
+        return web.Response()
+
+    target = "aiohttp.web_protocol.RequestHandler.data_received"
+    with mock.patch(target, delay_received):
+        app = web.Application()
+        app.router.add_get("/", handler)
+        client = await aiohttp_client(app)
+
+        # Open connection, so we have a keepalive connection and reference to protocol.
+        async with client.get("/") as resp:
+            assert resp.status == 200
+        assert protocol is not None
+        # Make 2nd request which will hit the race condition.
+        async with client.get("/") as resp:
+            assert resp.status == 200

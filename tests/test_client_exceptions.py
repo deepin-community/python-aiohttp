@@ -5,6 +5,8 @@ import pickle
 from unittest import mock
 
 import pytest
+from multidict import CIMultiDict
+from yarl import URL
 
 from aiohttp import client, client_reqrep
 
@@ -43,7 +45,7 @@ class TestClientResponseError:
             history=(),
             status=400,
             message="Something wrong",
-            headers={},
+            headers=CIMultiDict(foo="bar"),
         )
         err.foo = "bar"
         for proto in range(pickle.HIGHEST_PROTOCOL + 1):
@@ -53,7 +55,8 @@ class TestClientResponseError:
             assert err2.history == ()
             assert err2.status == 400
             assert err2.message == "Something wrong"
-            assert err2.headers == {}
+            # Use headers.get() to verify static type is correct.
+            assert err2.headers.get("foo") == "bar"
             assert err2.foo == "bar"
 
     def test_repr(self) -> None:
@@ -65,11 +68,11 @@ class TestClientResponseError:
             history=(),
             status=400,
             message="Something wrong",
-            headers={},
+            headers=CIMultiDict(),
         )
         assert repr(err) == (
             "ClientResponseError(%r, (), status=400, "
-            "message='Something wrong', headers={})" % (self.request_info,)
+            "message='Something wrong', headers=<CIMultiDict()>)" % (self.request_info,)
         )
 
     def test_str(self) -> None:
@@ -78,7 +81,7 @@ class TestClientResponseError:
             history=(),
             status=400,
             message="Something wrong",
-            headers={},
+            headers=CIMultiDict(),
         )
         assert str(err) == (
             "400, message='Something wrong', " "url='http://example.com'"
@@ -298,8 +301,9 @@ class TestServerFingerprintMismatch:
 
 class TestInvalidURL:
     def test_ctor(self) -> None:
-        err = client.InvalidURL(url=":wrong:url:")
+        err = client.InvalidURL(url=":wrong:url:", description=":description:")
         assert err.url == ":wrong:url:"
+        assert err.description == ":description:"
 
     def test_pickle(self) -> None:
         err = client.InvalidURL(url=":wrong:url:")
@@ -310,10 +314,27 @@ class TestInvalidURL:
             assert err2.url == ":wrong:url:"
             assert err2.foo == "bar"
 
-    def test_repr(self) -> None:
+    def test_repr_no_description(self) -> None:
         err = client.InvalidURL(url=":wrong:url:")
+        assert err.args == (":wrong:url:",)
         assert repr(err) == "<InvalidURL :wrong:url:>"
 
-    def test_str(self) -> None:
+    def test_repr_yarl_URL(self) -> None:
+        err = client.InvalidURL(url=URL(":wrong:url:"))
+        assert repr(err) == "<InvalidURL :wrong:url:>"
+
+    def test_repr_with_description(self) -> None:
+        err = client.InvalidURL(url=":wrong:url:", description=":description:")
+        assert repr(err) == "<InvalidURL :wrong:url: - :description:>"
+
+    def test_str_no_description(self) -> None:
         err = client.InvalidURL(url=":wrong:url:")
         assert str(err) == ":wrong:url:"
+
+    def test_none_description(self) -> None:
+        err = client.InvalidURL(":wrong:url:")
+        assert err.description is None
+
+    def test_str_with_description(self) -> None:
+        err = client.InvalidURL(url=":wrong:url:", description=":description:")
+        assert str(err) == ":wrong:url: - :description:"
