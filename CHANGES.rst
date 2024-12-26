@@ -10,6 +10,1263 @@
 
 .. towncrier release notes start
 
+3.10.10 (2024-10-10)
+====================
+
+Bug fixes
+---------
+
+- Fixed error messages from :py:class:`~aiohttp.resolver.AsyncResolver` being swallowed -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9451`, :issue:`9455`.
+
+
+
+
+Features
+--------
+
+- Added :exc:`aiohttp.ClientConnectorDNSError` for differentiating DNS resolution errors from other connector errors -- by :user:`mstojcevich`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8455`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Simplified DNS resolution throttling code to reduce chance of race conditions -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9454`.
+
+
+
+
+----
+
+
+3.10.9 (2024-10-04)
+===================
+
+Bug fixes
+---------
+
+- Fixed proxy headers being used in the ``ConnectionKey`` hash when a proxy was not being used -- by :user:`bdraco`.
+
+  If default headers are used, they are also used for proxy headers. This could have led to creating connections that were not needed when one was already available.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9368`.
+
+
+
+- Widened the type of the ``trace_request_ctx`` parameter of
+  :meth:`ClientSession.request() <aiohttp.ClientSession.request>` and friends
+  -- by :user:`layday`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9397`.
+
+
+
+
+Removals and backward incompatible breaking changes
+---------------------------------------------------
+
+- Fixed failure to try next host after single-host connection timeout -- by :user:`brettdh`.
+
+  The default client :class:`aiohttp.ClientTimeout` params has changed to include a ``sock_connect`` timeout of 30 seconds so that this correct behavior happens by default.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7342`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved performance of resolving hosts with Python 3.12+ -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9342`.
+
+
+
+- Reduced memory required for timer objects created during the client request lifecycle -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9406`.
+
+
+
+
+----
+
+
+3.10.8 (2024-09-28)
+===================
+
+Bug fixes
+---------
+
+- Fixed cancellation leaking upwards on timeout -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9326`.
+
+
+
+
+----
+
+
+3.10.7 (2024-09-27)
+===================
+
+Bug fixes
+---------
+
+- Fixed assembling the :class:`~yarl.URL` for web requests when the host contains a non-default port or IPv6 address -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9309`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved performance of determining if a URL is absolute -- by :user:`bdraco`.
+
+  The property :attr:`~yarl.URL.absolute` is more performant than the method ``URL.is_absolute()`` and preferred when newer versions of yarl are used.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9171`.
+
+
+
+- Replaced code that can now be handled by ``yarl`` -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9301`.
+
+
+
+
+----
+
+
+3.10.6 (2024-09-24)
+===================
+
+Bug fixes
+---------
+
+- Added :exc:`aiohttp.ClientConnectionResetError`. Client code that previously threw :exc:`ConnectionResetError`
+  will now throw this -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9137`.
+
+
+
+- Fixed an unclosed transport ``ResourceWarning`` on web handlers -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8875`.
+
+
+
+- Fixed resolve_host() 'Task was destroyed but is pending' errors -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8967`.
+
+
+
+- Fixed handling of some file-like objects (e.g. ``tarfile.extractfile()``) which raise ``AttributeError`` instead of ``OSError`` when ``fileno`` fails for streaming payload data -- by :user:`ReallyReivax`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`6732`.
+
+
+
+- Fixed web router not matching pre-encoded URLs (requires yarl 1.9.6+) -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8898`, :issue:`9267`.
+
+
+
+- Fixed an error when trying to add a route for multiple methods with a path containing a regex pattern -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8998`.
+
+
+
+- Fixed ``Response.text`` when body is a ``Payload`` -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`6485`.
+
+
+
+- Fixed compressed requests failing when no body was provided -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9108`.
+
+
+
+- Fixed client incorrectly reusing a connection when the previous message had not been fully sent -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8992`.
+
+
+
+- Fixed race condition that could cause server to close connection incorrectly at keepalive timeout -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9140`.
+
+
+
+- Fixed Python parser chunked handling with multiple Transfer-Encoding values -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8823`.
+
+
+
+- Fixed error handling after 100-continue so server sends 500 response instead of disconnecting -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8876`.
+
+
+
+- Stopped adding a default Content-Type header when response has no content -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8858`.
+
+
+
+- Added support for URL credentials with empty (zero-length) username, e.g. ``https://:password@host`` -- by :user:`shuckc`
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`6494`.
+
+
+
+- Stopped logging exceptions from ``web.run_app()`` that would be raised regardless -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`6807`.
+
+
+
+- Implemented binding to IPv6 addresses in the pytest server fixture.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`4650`.
+
+
+
+- Fixed the incorrect use of flags for ``getnameinfo()`` in the Resolver --by :user:`GitNMLee`
+
+  Link-Local IPv6 addresses can now be handled by the Resolver correctly.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9032`.
+
+
+
+- Fixed StreamResponse.prepared to return True after EOF is sent -- by :user:`arthurdarcet`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`5343`.
+
+
+
+- Changed ``make_mocked_request()`` to use empty payload by default -- by :user:`rahulnht`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7167`.
+
+
+
+- Used more precise type for ``ClientResponseError.headers``, fixing some type errors when using them -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8768`.
+
+
+
+- Changed behavior when returning an invalid response to send a 500 response -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8845`.
+
+
+
+- Fixed response reading from closed session to throw an error immediately instead of timing out -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8878`.
+
+
+
+- Fixed ``CancelledError`` from one cleanup context stopping other contexts from completing -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8908`.
+
+
+
+- Fixed changing scheme/host in ``Response.clone()`` for absolute URLs -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8990`.
+
+
+
+- Fixed ``Site.name`` when host is an empty string -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8929`.
+
+
+
+- Updated Python parser to reject messages after a close message, matching C parser behaviour -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9018`.
+
+
+
+- Fixed creation of ``SSLContext`` inside of :py:class:`aiohttp.TCPConnector` with multiple event loops in different threads -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9029`.
+
+
+
+- Fixed (on Python 3.11+) some edge cases where a task cancellation may get incorrectly suppressed -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9030`.
+
+
+
+- Fixed exception information getting lost on ``HttpProcessingError`` -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9052`.
+
+
+
+- Fixed ``If-None-Match`` not using weak comparison -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9063`.
+
+
+
+- Fixed badly encoded charset crashing when getting response text instead of falling back to charset detector.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9160`.
+
+
+
+- Rejected `\n` in `reason` values to avoid sending broken HTTP messages -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9167`.
+
+
+
+- Changed :py:meth:`ClientResponse.raise_for_status() <aiohttp.ClientResponse.raise_for_status>` to only release the connection when invoked outside an ``async with`` context -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9239`.
+
+
+
+
+Features
+--------
+
+- Improved type on ``params`` to match the underlying type allowed by ``yarl`` -- by :user:`lpetre`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8564`.
+
+
+
+- Declared Python 3.13 supported -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8748`.
+
+
+
+
+Removals and backward incompatible breaking changes
+---------------------------------------------------
+
+- Improved middleware performance -- by :user:`bdraco`.
+
+  The ``set_current_app`` method was removed from ``UrlMappingMatchInfo`` because it is no longer used, and it was unlikely external caller would ever use it.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9200`.
+
+
+
+- Increased minimum yarl version to 1.12.0 -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9267`.
+
+
+
+
+Improved documentation
+----------------------
+
+- Clarified that ``GracefulExit`` needs to be handled in ``AppRunner`` and ``ServerRunner`` when using ``handle_signals=True``. -- by :user:`Daste745`
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`4414`.
+
+
+
+- Clarified that auth parameter in ClientSession will persist and be included with any request to any origin, even during redirects to different origins.  -- by :user:`MaximZemskov`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`6764`.
+
+
+
+- Clarified which timeout exceptions happen on which timeouts -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8968`.
+
+
+
+- Updated ``ClientSession`` parameters to match current code -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8991`.
+
+
+
+
+Packaging updates and notes for downstreams
+-------------------------------------------
+
+- Fixed ``test_client_session_timeout_zero`` to not require internet access -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9004`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved performance of making requests when there are no auto headers to skip -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8847`.
+
+
+
+- Exported ``aiohttp.TraceRequestHeadersSentParams`` -- by :user:`Hadock-is-ok`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8947`.
+
+
+
+- Avoided tracing overhead in the http writer when there are no active traces -- by user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9031`.
+
+
+
+- Improved performance of reify Cython implementation -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9054`.
+
+
+
+- Use :meth:`URL.extend_query() <yarl.URL.extend_query>` to extend query params (requires yarl 1.11.0+) -- by :user:`bdraco`.
+
+  If yarl is older than 1.11.0, the previous slower hand rolled version will be used.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9068`.
+
+
+
+- Improved performance of checking if a host is an IP Address -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9095`.
+
+
+
+- Significantly improved performance of middlewares -- by :user:`bdraco`.
+
+  The construction of the middleware wrappers is now cached and is built once per handler instead of on every request.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9158`, :issue:`9170`.
+
+
+
+- Improved performance of web requests -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9168`, :issue:`9169`, :issue:`9172`, :issue:`9174`, :issue:`9175`, :issue:`9241`.
+
+
+
+- Improved performance of starting web requests when there is no response prepare hook -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9173`.
+
+
+
+- Significantly improved performance of expiring cookies -- by :user:`bdraco`.
+
+  Expiring cookies has been redesigned to use :mod:`heapq` instead of a linear search, to better scale.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9203`.
+
+
+
+- Significantly sped up filtering cookies -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`9204`.
+
+
+
+
+----
+
+
+3.10.5 (2024-08-19)
+=========================
+
+Bug fixes
+---------
+
+- Fixed :meth:`aiohttp.ClientResponse.json()` not setting ``status`` when :exc:`aiohttp.ContentTypeError` is raised -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8742`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved performance of the WebSocket reader -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8736`, :issue:`8747`.
+
+
+
+
+----
+
+
+3.10.4 (2024-08-17)
+===================
+
+Bug fixes
+---------
+
+- Fixed decoding base64 chunk in BodyPartReader -- by :user:`hyzyla`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`3867`.
+
+
+
+- Fixed a race closing the server-side WebSocket where the close code would not reach the client -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8680`.
+
+
+
+- Fixed unconsumed exceptions raised by the WebSocket heartbeat -- by :user:`bdraco`.
+
+  If the heartbeat ping raised an exception, it would not be consumed and would be logged as an warning.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8685`.
+
+
+
+- Fixed an edge case in the Python parser when chunk separators happen to align with network chunks -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8720`.
+
+
+
+
+Improved documentation
+----------------------
+
+- Added ``aiohttp-apischema`` to supported libraries -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8700`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved performance of starting request handlers with Python 3.12+ -- by :user:`bdraco`.
+
+  This change is a followup to :issue:`8661` to make the same optimization for Python 3.12+ where the request is connected.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8681`.
+
+
+
+
+----
+
+
+3.10.3 (2024-08-10)
+========================
+
+Bug fixes
+---------
+
+- Fixed multipart reading when stream buffer splits the boundary over several read() calls -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8653`.
+
+
+
+- Fixed :py:class:`aiohttp.TCPConnector` doing blocking I/O in the event loop to create the ``SSLContext`` -- by :user:`bdraco`.
+
+  The blocking I/O would only happen once per verify mode. However, it could cause the event loop to block for a long time if the ``SSLContext`` creation is slow, which is more likely during startup when the disk cache is not yet present.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8672`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved performance of :py:meth:`~aiohttp.ClientWebSocketResponse.receive` and :py:meth:`~aiohttp.web.WebSocketResponse.receive` when there is no timeout. -- by :user:`bdraco`.
+
+  The timeout context manager is now avoided when there is no timeout as it accounted for up to 50% of the time spent in the :py:meth:`~aiohttp.ClientWebSocketResponse.receive` and :py:meth:`~aiohttp.web.WebSocketResponse.receive` methods.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8660`.
+
+
+
+- Improved performance of starting request handlers with Python 3.12+ -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8661`.
+
+
+
+- Improved performance of HTTP keep-alive checks -- by :user:`bdraco`.
+
+  Previously, when processing a request for a keep-alive connection, the keep-alive check would happen every second; the check is now rescheduled if it fires too early instead.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8662`.
+
+
+
+- Improved performance of generating random WebSocket mask -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8667`.
+
+
+
+
+----
+
+
+3.10.2 (2024-08-08)
+===================
+
+Bug fixes
+---------
+
+- Fixed server checks for circular symbolic links to be compatible with Python 3.13 -- by :user:`steverep`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8565`.
+
+
+
+- Fixed request body not being read when ignoring an Upgrade request -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8597`.
+
+
+
+- Fixed an edge case where shutdown would wait for timeout when the handler was already completed -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8611`.
+
+
+
+- Fixed connecting to ``npipe://``, ``tcp://``, and ``unix://`` urls -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8632`.
+
+
+
+- Fixed WebSocket ping tasks being prematurely garbage collected -- by :user:`bdraco`.
+
+  There was a small risk that WebSocket ping tasks would be prematurely garbage collected because the event loop only holds a weak reference to the task. The garbage collection risk has been fixed by holding a strong reference to the task. Additionally, the task is now scheduled eagerly with Python 3.12+ to increase the chance it can be completed immediately and avoid having to hold any references to the task.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8641`.
+
+
+
+- Fixed incorrectly following symlinks for compressed file variants -- by :user:`steverep`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8652`.
+
+
+
+
+Removals and backward incompatible breaking changes
+---------------------------------------------------
+
+- Removed ``Request.wait_for_disconnection()``, which was mistakenly added briefly in 3.10.0 -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8636`.
+
+
+
+
+Contributor-facing changes
+--------------------------
+
+- Fixed monkey patches for ``Path.stat()`` and ``Path.is_dir()`` for Python 3.13 compatibility -- by :user:`steverep`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8551`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved WebSocket performance when messages are sent or received frequently -- by :user:`bdraco`.
+
+  The WebSocket heartbeat scheduling algorithm was improved to reduce the ``asyncio`` scheduling overhead by decreasing the number of ``asyncio.TimerHandle`` creations and cancellations.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8608`.
+
+
+
+- Minor improvements to various type annotations -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8634`.
+
+
+
+
+----
+
+
+3.10.1 (2024-08-03)
+========================
+
+Bug fixes
+---------
+
+- Fixed WebSocket server heartbeat timeout logic to terminate :py:meth:`~aiohttp.ClientWebSocketResponse.receive` and return :py:class:`~aiohttp.ServerTimeoutError` -- by :user:`arcivanov`.
+
+  When a WebSocket pong message was not received, the :py:meth:`~aiohttp.ClientWebSocketResponse.receive` operation did not terminate. This change causes ``_pong_not_received`` to feed the ``reader`` an error message, causing pending :py:meth:`~aiohttp.ClientWebSocketResponse.receive` to terminate and return the error message. The error message contains the exception :py:class:`~aiohttp.ServerTimeoutError`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8540`.
+
+
+
+- Fixed url dispatcher index not matching when a variable is preceded by a fixed string after a slash -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8566`.
+
+
+
+
+Removals and backward incompatible breaking changes
+---------------------------------------------------
+
+- Creating :py:class:`aiohttp.TCPConnector`, :py:class:`aiohttp.ClientSession`, :py:class:`~aiohttp.resolver.ThreadedResolver` :py:class:`aiohttp.web.Server`, or :py:class:`aiohttp.CookieJar` instances without a running event loop now raises a :exc:`RuntimeError` -- by :user:`asvetlov`.
+
+  Creating these objects without a running event loop was deprecated in :issue:`3372` which was released in version 3.5.0.
+
+  This change first appeared in version 3.10.0 as :issue:`6378`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8555`, :issue:`8583`.
+
+
+
+
+----
+
+
+3.10.0 (2024-07-30)
+========================
+
+Bug fixes
+---------
+
+- Fixed server response headers for ``Content-Type`` and ``Content-Encoding`` for
+  static compressed files -- by :user:`steverep`.
+
+  Server will now respond with a ``Content-Type`` appropriate for the compressed
+  file (e.g. ``"application/gzip"``), and omit the ``Content-Encoding`` header.
+  Users should expect that most clients will no longer decompress such responses
+  by default.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`4462`.
+
+
+
+- Fixed duplicate cookie expiration calls in the CookieJar implementation
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7784`.
+
+
+
+- Adjusted ``FileResponse`` to check file existence and access when preparing the response -- by :user:`steverep`.
+
+  The :py:class:`~aiohttp.web.FileResponse` class was modified to respond with
+   403 Forbidden or 404 Not Found as appropriate.  Previously, it would cause a
+   server error if the path did not exist or could not be accessed.  Checks for
+   existence, non-regular files, and permissions were expected to be done in the
+   route handler.  For static routes, this now permits a compressed file to exist
+   without its uncompressed variant and still be served.  In addition, this
+   changes the response status for files without read permission to 403, and for
+   non-regular files from 404 to 403 for consistency.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8182`.
+
+
+
+- Fixed ``AsyncResolver`` to match ``ThreadedResolver`` behavior
+  -- by :user:`bdraco`.
+
+  On system with IPv6 support, the :py:class:`~aiohttp.resolver.AsyncResolver` would not fallback
+  to providing A records when AAAA records were not available.
+  Additionally, unlike the :py:class:`~aiohttp.resolver.ThreadedResolver`, the :py:class:`~aiohttp.resolver.AsyncResolver`
+  did not handle link-local addresses correctly.
+
+  This change makes the behavior consistent with the :py:class:`~aiohttp.resolver.ThreadedResolver`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8270`.
+
+
+
+- Fixed ``ws_connect`` not respecting `receive_timeout`` on WS(S) connection.
+  -- by :user:`arcivanov`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8444`.
+
+
+
+- Removed blocking I/O in the event loop for static resources and refactored
+  exception handling -- by :user:`steverep`.
+
+  File system calls when handling requests for static routes were moved to a
+  separate thread to potentially improve performance. Exception handling
+  was tightened in order to only return 403 Forbidden or 404 Not Found responses
+  for expected scenarios; 500 Internal Server Error would be returned for any
+  unknown errors.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8507`.
+
+
+
+
+Features
+--------
+
+- Added a Request.wait_for_disconnection() method, as means of allowing request handlers to be notified of premature client disconnections.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`2492`.
+
+
+
+- Added 5 new exceptions: :py:exc:`~aiohttp.InvalidUrlClientError`, :py:exc:`~aiohttp.RedirectClientError`,
+  :py:exc:`~aiohttp.NonHttpUrlClientError`, :py:exc:`~aiohttp.InvalidUrlRedirectClientError`,
+  :py:exc:`~aiohttp.NonHttpUrlRedirectClientError`
+
+  :py:exc:`~aiohttp.InvalidUrlRedirectClientError`, :py:exc:`~aiohttp.NonHttpUrlRedirectClientError`
+  are raised instead of :py:exc:`ValueError` or :py:exc:`~aiohttp.InvalidURL` when the redirect URL is invalid. Classes
+  :py:exc:`~aiohttp.InvalidUrlClientError`, :py:exc:`~aiohttp.RedirectClientError`,
+  :py:exc:`~aiohttp.NonHttpUrlClientError` are base for them.
+
+  The :py:exc:`~aiohttp.InvalidURL` now exposes a ``description`` property with the text explanation of the error details.
+
+  -- by :user:`setla`, :user:`AraHaan`, and :user:`bdraco`
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`2507`, :issue:`3315`, :issue:`6722`, :issue:`8481`, :issue:`8482`.
+
+
+
+- Added a feature to retry closed connections automatically for idempotent methods. -- by :user:`Dreamsorcerer`
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7297`.
+
+
+
+- Implemented filter_cookies() with domain-matching and path-matching on the keys, instead of testing every single cookie.
+  This may break existing cookies that have been saved with `CookieJar.save()`. Cookies can be migrated with this script::
+
+      import pickle
+      with file_path.open("rb") as f:
+          cookies = pickle.load(f)
+
+      morsels = [(name, m) for c in cookies.values() for name, m in c.items()]
+      cookies.clear()
+      for name, m in morsels:
+          cookies[(m["domain"], m["path"].rstrip("/"))][name] = m
+
+      with file_path.open("wb") as f:
+          pickle.dump(cookies, f, pickle.HIGHEST_PROTOCOL)
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7583`, :issue:`8535`.
+
+
+
+- Separated connection and socket timeout errors, from ServerTimeoutError.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7801`.
+
+
+
+- Implemented happy eyeballs
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7954`.
+
+
+
+- Added server capability to check for static files with Brotli compression via a ``.br`` extension -- by :user:`steverep`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8062`.
+
+
+
+
+Removals and backward incompatible breaking changes
+---------------------------------------------------
+
+- The shutdown logic in 3.9 waited on all tasks, which caused issues with some libraries.
+  In 3.10 we've changed this logic to only wait on request handlers. This means that it's
+  important for developers to correctly handle the lifecycle of background tasks using a
+  library such as ``aiojobs``. If an application is using ``handler_cancellation=True`` then
+  it is also a good idea to ensure that any :func:`asyncio.shield` calls are replaced with
+  :func:`aiojobs.aiohttp.shield`.
+
+  Please read the updated documentation on these points: \
+  https://docs.aiohttp.org/en/stable/web_advanced.html#graceful-shutdown \
+  https://docs.aiohttp.org/en/stable/web_advanced.html#web-handler-cancellation
+
+  -- by :user:`Dreamsorcerer`
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8495`.
+
+
+
+
+Improved documentation
+----------------------
+
+- Added documentation for ``aiohttp.web.FileResponse``.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`3958`.
+
+
+
+- Improved the docs for the `ssl` params.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8403`.
+
+
+
+
+Contributor-facing changes
+--------------------------
+
+- Enabled HTTP parser tests originally intended for 3.9.2 release -- by :user:`pajod`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8088`.
+
+
+
+
+Miscellaneous internal changes
+------------------------------
+
+- Improved URL handler resolution time by indexing resources in the UrlDispatcher.
+  For applications with a large number of handlers, this should increase performance significantly.
+  -- by :user:`bdraco`
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`7829`.
+
+
+
+- Added `nacl_middleware <https://github.com/CosmicDNA/nacl_middleware>`_ to the list of middlewares in the third party section of the documentation.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8346`.
+
+
+
+- Minor improvements to static typing -- by :user:`Dreamsorcerer`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8364`.
+
+
+
+- Added a 3.11-specific overloads to ``ClientSession``  -- by :user:`max-muoto`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8463`.
+
+
+
+- Simplified path checks for ``UrlDispatcher.add_static()`` method -- by :user:`steverep`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8491`.
+
+
+
+- Avoided creating a future on every websocket receive -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8498`.
+
+
+
+- Updated identity checks for all ``WSMsgType`` type compares -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8501`.
+
+
+
+- When using Python 3.12 or later, the writer is no longer scheduled on the event loop if it can finish synchronously. Avoiding event loop scheduling reduces latency and improves performance. -- by :user:`bdraco`.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8510`.
+
+
+
+- Restored :py:class:`~aiohttp.resolver.AsyncResolver` to be the default resolver. -- by :user:`bdraco`.
+
+  :py:class:`~aiohttp.resolver.AsyncResolver` was disabled by default because
+  of IPv6 compatibility issues. These issues have been resolved and
+  :py:class:`~aiohttp.resolver.AsyncResolver` is again now the default resolver.
+
+
+  *Related issues and pull requests on GitHub:*
+  :issue:`8522`.
+
+
+
+
+----
+
+
 3.9.5 (2024-04-16)
 ==================
 

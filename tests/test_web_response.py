@@ -1,8 +1,10 @@
 import collections.abc
 import datetime
 import gzip
+import io
 import json
 from concurrent.futures import ThreadPoolExecutor
+from typing import AsyncIterator, Optional
 from unittest import mock
 
 import aiosignal
@@ -13,7 +15,8 @@ from re_assert import Matches
 from aiohttp import HttpVersion, HttpVersion10, HttpVersion11, hdrs
 from aiohttp.helpers import ETag
 from aiohttp.http_writer import StreamWriter, _serialize_headers
-from aiohttp.payload import BytesPayload
+from aiohttp.multipart import BodyPartReader, MultipartWriter
+from aiohttp.payload import BytesPayload, StringPayload
 from aiohttp.test_utils import make_mocked_coro, make_mocked_request
 from aiohttp.web import ContentCoding, Response, StreamResponse, json_response
 
@@ -663,6 +666,22 @@ async def test_rm_content_length_if_compression_http10() -> None:
     assert resp.content_length is None
 
 
+async def test_rm_content_length_if_204() -> None:
+    """Ensure content-length is removed for 204 responses."""
+    writer = mock.create_autospec(StreamWriter, spec_set=True, instance=True)
+
+    async def write_headers(status_line, headers):
+        assert hdrs.CONTENT_LENGTH not in headers
+
+    writer.write_headers.side_effect = write_headers
+    req = make_request("GET", "/", writer=writer)
+    payload = BytesPayload(b"answer", headers={"Content-Length": "6"})
+    resp = Response(body=payload, status=204)
+    resp.body = payload
+    await resp.prepare(req)
+    assert resp.content_length is None
+
+
 @pytest.mark.parametrize("status", (100, 101, 204, 304))
 async def test_rm_transfer_encoding_rfc_9112_6_3_http_11(status: int) -> None:
     """Remove transfer encoding for RFC 9112 sec 6.3 with HTTP/1.1."""
@@ -773,11 +792,8 @@ async def test___repr___after_eof() -> None:
     resp = StreamResponse()
     await resp.prepare(make_request("GET", "/"))
 
-    assert resp.prepared
-
     await resp.write(b"data")
     await resp.write_eof()
-    assert not resp.prepared
     resp_repr = repr(resp)
     assert resp_repr == "<StreamResponse OK eof>"
 
@@ -916,6 +932,14 @@ def test_set_status_with_reason() -> None:
     assert "Everything is fine!" == resp.reason
 
 
+def test_set_status_with_empty_reason() -> None:
+    resp = StreamResponse()
+
+    resp.set_status(200, "")
+    assert resp.status == 200
+    assert resp.reason == ""
+
+
 async def test_start_force_close() -> None:
     req = make_request("GET", "/")
     resp = StreamResponse()
@@ -928,14 +952,14 @@ async def test_start_force_close() -> None:
 
 async def test___repr__() -> None:
     req = make_request("GET", "/path/to")
-    resp = StreamResponse(reason=301)
+    resp = StreamResponse(reason="foo")
     await resp.prepare(req)
-    assert "<StreamResponse 301 GET /path/to >" == repr(resp)
+    assert "<StreamResponse foo GET /path/to >" == repr(resp)
 
 
 def test___repr___not_prepared() -> None:
-    resp = StreamResponse(reason=301)
-    assert "<StreamResponse 301 not prepared>" == repr(resp)
+    resp = StreamResponse(reason="foo")
+    assert "<StreamResponse foo not prepared>" == repr(resp)
 
 
 async def test_keep_alive_http10_default() -> None:
@@ -1122,6 +1146,48 @@ def test_assign_nonstr_text() -> None:
     assert 4 == resp.content_length
 
 
+mpwriter = MultipartWriter(boundary="x")
+mpwriter.append_payload(StringPayload("test"))
+
+
+async def async_iter() -> AsyncIterator[str]:
+    yield "foo"  # pragma: no cover
+
+
+class CustomIO(io.IOBase):
+    def __init__(self):
+        self._lines = [b"", b"", b"test"]
+
+    def read(self, size: int = -1) -> bytes:
+        return self._lines.pop()
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    (
+        ("test", "test"),
+        (CustomIO(), "test"),
+        (io.StringIO("test"), "test"),
+        (io.TextIOWrapper(io.BytesIO(b"test")), "test"),
+        (io.BytesIO(b"test"), "test"),
+        (io.BufferedReader(io.BytesIO(b"test")), "test"),
+        (async_iter(), None),
+        (BodyPartReader("x", CIMultiDictProxy(CIMultiDict()), mock.Mock()), None),
+        (
+            mpwriter,
+            "--x\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 4\r\n\r\ntest",
+        ),
+    ),
+)
+def test_payload_body_get_text(payload, expected: Optional[str]) -> None:
+    resp = Response(body=payload)
+    if expected is None:
+        with pytest.raises(TypeError):
+            resp.text
+    else:
+        assert resp.text == expected
+
+
 def test_response_set_content_length() -> None:
     resp = Response()
     with pytest.raises(RuntimeError):
@@ -1139,7 +1205,6 @@ async def test_send_headers_for_empty_body(buf, writer) -> None:
         Matches(
             "HTTP/1.1 200 OK\r\n"
             "Content-Length: 0\r\n"
-            "Content-Type: application/octet-stream\r\n"
             "Date: .+\r\n"
             "Server: .+\r\n\r\n"
         )
@@ -1168,6 +1233,11 @@ async def test_render_with_body(buf, writer) -> None:
     )
 
 
+async def test_multiline_reason(buf, writer) -> None:
+    with pytest.raises(ValueError, match=r"Reason cannot contain \\n"):
+        Response(reason="Bad\r\nInjected-header: foo")
+
+
 async def test_send_set_cookie_header(buf, writer) -> None:
     resp = Response()
     resp.cookies["name"] = "value"
@@ -1182,7 +1252,6 @@ async def test_send_set_cookie_header(buf, writer) -> None:
             "HTTP/1.1 200 OK\r\n"
             "Content-Length: 0\r\n"
             "Set-Cookie: name=value\r\n"
-            "Content-Type: application/octet-stream\r\n"
             "Date: .+\r\n"
             "Server: .+\r\n\r\n"
         )
@@ -1245,14 +1314,22 @@ def test_content_type_with_set_body() -> None:
     assert resp.content_type == "application/octet-stream"
 
 
-def test_started_when_not_started() -> None:
+def test_prepared_when_not_started() -> None:
     resp = StreamResponse()
     assert not resp.prepared
 
 
-async def test_started_when_started() -> None:
+async def test_prepared_when_started() -> None:
     resp = StreamResponse()
     await resp.prepare(make_request("GET", "/"))
+    assert resp.prepared
+
+
+async def test_prepared_after_eof() -> None:
+    resp = StreamResponse()
+    await resp.prepare(make_request("GET", "/"))
+    await resp.write(b"data")
+    await resp.write_eof()
     assert resp.prepared
 
 

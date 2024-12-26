@@ -1,14 +1,21 @@
 import asyncio
+import bz2
 import gzip
 import pathlib
 import socket
 import zlib
 from typing import Any, Iterable, Optional
+from unittest import mock
 
 import pytest
 
 import aiohttp
 from aiohttp import web
+
+try:
+    import brotlicffi as brotli
+except ImportError:
+    import brotli
 
 try:
     import ssl
@@ -27,20 +34,18 @@ def hello_txt(request, tmp_path_factory) -> pathlib.Path:
     indirect parameter can be passed with an encoding to get a compressed path.
     """
     txt = tmp_path_factory.mktemp("hello-") / "hello.txt"
-    hello = {None: txt, "gzip": txt.with_suffix(f"{txt.suffix}.gz")}
-    hello[None].write_bytes(HELLO_AIOHTTP)
+    hello = {
+        None: txt,
+        "gzip": txt.with_suffix(f"{txt.suffix}.gz"),
+        "br": txt.with_suffix(f"{txt.suffix}.br"),
+        "bzip2": txt.with_suffix(f"{txt.suffix}.bz2"),
+    }
+    # Uncompressed file is not actually written to test it is not required.
     hello["gzip"].write_bytes(gzip.compress(HELLO_AIOHTTP))
+    hello["br"].write_bytes(brotli.compress(HELLO_AIOHTTP))
+    hello["bzip2"].write_bytes(bz2.compress(HELLO_AIOHTTP))
     encoding = getattr(request, "param", None)
     return hello[encoding]
-
-
-@pytest.fixture
-def loop_without_sendfile(loop):
-    def sendfile(*args, **kwargs):
-        raise NotImplementedError
-
-    loop.sendfile = sendfile
-    return loop
 
 
 @pytest.fixture
@@ -55,14 +60,27 @@ def loop_with_mocked_native_sendfile(loop: Any):
 
 
 @pytest.fixture(params=["sendfile", "no_sendfile"], ids=["sendfile", "no_sendfile"])
-def sender(request, loop_without_sendfile):
+def sender(request: Any, loop: Any):
+    sendfile_mock = None
+
     def maker(*args, **kwargs):
         ret = web.FileResponse(*args, **kwargs)
-        if request.param == "no_sendfile":
-            asyncio.set_event_loop(loop_without_sendfile)
+        rloop = asyncio.get_running_loop()
+        is_patched = rloop.sendfile is sendfile_mock
+        assert is_patched if request.param == "no_sendfile" else not is_patched
         return ret
 
-    return maker
+    if request.param == "no_sendfile":
+        with mock.patch.object(
+            loop,
+            "sendfile",
+            autospec=True,
+            spec_set=True,
+            side_effect=NotImplementedError,
+        ) as sendfile_mock:
+            yield maker
+    else:
+        yield maker
 
 
 @pytest.fixture
@@ -220,7 +238,7 @@ async def test_static_file_with_content_type(aiohttp_client, sender) -> None:
     await client.close()
 
 
-@pytest.mark.parametrize("hello_txt", ["gzip"], indirect=True)
+@pytest.mark.parametrize("hello_txt", ["gzip", "br"], indirect=True)
 async def test_static_file_custom_content_type(
     hello_txt: pathlib.Path, aiohttp_client: Any, sender: Any
 ) -> None:
@@ -245,8 +263,16 @@ async def test_static_file_custom_content_type(
     await client.close()
 
 
+@pytest.mark.parametrize(
+    ("accept_encoding", "expect_encoding"),
+    [("gzip, deflate", "gzip"), ("gzip, deflate, br", "br")],
+)
 async def test_static_file_custom_content_type_compress(
-    hello_txt: pathlib.Path, aiohttp_client: Any, sender: Any
+    hello_txt: pathlib.Path,
+    aiohttp_client: Any,
+    sender: Any,
+    accept_encoding: str,
+    expect_encoding: str,
 ):
     """Test that custom type with encoding is returned for unencoded requests."""
 
@@ -259,9 +285,9 @@ async def test_static_file_custom_content_type_compress(
     app.router.add_get("/", handler)
     client = await aiohttp_client(app)
 
-    resp = await client.get("/")
+    resp = await client.get("/", headers={"Accept-Encoding": accept_encoding})
     assert resp.status == 200
-    assert resp.headers.get("Content-Encoding") == "gzip"
+    assert resp.headers.get("Content-Encoding") == expect_encoding
     assert resp.headers["Content-Type"] == "application/pdf"
     assert await resp.read() == HELLO_AIOHTTP
     resp.close()
@@ -269,11 +295,17 @@ async def test_static_file_custom_content_type_compress(
     await client.close()
 
 
+@pytest.mark.parametrize(
+    ("accept_encoding", "expect_encoding"),
+    [("gzip, deflate", "gzip"), ("gzip, deflate, br", "br")],
+)
 @pytest.mark.parametrize("forced_compression", [None, web.ContentCoding.gzip])
 async def test_static_file_with_encoding_and_enable_compression(
     hello_txt: pathlib.Path,
     aiohttp_client: Any,
     sender: Any,
+    accept_encoding: str,
+    expect_encoding: str,
     forced_compression: Optional[web.ContentCoding],
 ):
     """Test that enable_compression does not double compress when an encoded file is also present."""
@@ -287,9 +319,9 @@ async def test_static_file_with_encoding_and_enable_compression(
     app.router.add_get("/", handler)
     client = await aiohttp_client(app)
 
-    resp = await client.get("/")
+    resp = await client.get("/", headers={"Accept-Encoding": accept_encoding})
     assert resp.status == 200
-    assert resp.headers.get("Content-Encoding") == "gzip"
+    assert resp.headers.get("Content-Encoding") == expect_encoding
     assert resp.headers["Content-Type"] == "text/plain"
     assert await resp.read() == HELLO_AIOHTTP
     resp.close()
@@ -298,10 +330,16 @@ async def test_static_file_with_encoding_and_enable_compression(
 
 
 @pytest.mark.parametrize(
-    ("hello_txt", "expect_encoding"), [["gzip"] * 2], indirect=["hello_txt"]
+    ("hello_txt", "expect_type"),
+    [
+        ("gzip", "application/gzip"),
+        ("br", "application/x-brotli"),
+        ("bzip2", "application/x-bzip2"),
+    ],
+    indirect=["hello_txt"],
 )
 async def test_static_file_with_content_encoding(
-    hello_txt: pathlib.Path, aiohttp_client: Any, sender: Any, expect_encoding: str
+    hello_txt: pathlib.Path, aiohttp_client: Any, sender: Any, expect_type: str
 ) -> None:
     """Test requesting static compressed files returns the correct content type and encoding."""
 
@@ -314,9 +352,9 @@ async def test_static_file_with_content_encoding(
 
     resp = await client.get("/")
     assert resp.status == 200
-    assert resp.headers.get("Content-Encoding") == expect_encoding
-    assert resp.headers["Content-Type"] == "text/plain"
-    assert await resp.read() == HELLO_AIOHTTP
+    assert resp.headers.get("Content-Encoding") is None
+    assert resp.headers["Content-Type"] == expect_type
+    assert await resp.read() == hello_txt.read_bytes()
     resp.close()
 
     await resp.release()
@@ -475,10 +513,9 @@ async def test_static_file_if_none_match(
 
     resp = await client.get("/")
     assert 200 == resp.status
-    original_etag = resp.headers.get("ETag")
+    original_etag = resp.headers["ETag"]
 
     assert resp.headers.get("Last-Modified") is not None
-    assert original_etag is not None
     resp.close()
     await resp.release()
 
@@ -514,6 +551,39 @@ async def test_static_file_if_none_match_star(
     resp.close()
 
     await resp.release()
+    await client.close()
+
+
+@pytest.mark.parametrize("if_modified_since", ("", "Fri, 31 Dec 9999 23:59:59 GMT"))
+async def test_static_file_if_none_match_weak(
+    aiohttp_client: Any,
+    app_with_static_route: web.Application,
+    if_modified_since: str,
+) -> None:
+    client = await aiohttp_client(app_with_static_route)
+
+    resp = await client.get("/")
+    assert 200 == resp.status
+    original_etag = resp.headers["ETag"]
+
+    assert resp.headers.get("Last-Modified") is not None
+    resp.close()
+    resp.release()
+
+    weak_etag = f"W/{original_etag}"
+
+    resp = await client.get(
+        "/",
+        headers={"If-None-Match": weak_etag, "If-Modified-Since": if_modified_since},
+    )
+    body = await resp.read()
+    assert 304 == resp.status
+    assert resp.headers.get("Content-Length") is None
+    assert resp.headers.get("ETag") == original_etag
+    assert b"" == body
+    resp.close()
+    resp.release()
+
     await client.close()
 
 
@@ -569,15 +639,6 @@ async def test_static_file_directory_traversal_attack(aiohttp_client) -> None:
     await resp.release()
 
     await client.close()
-
-
-def test_static_route_path_existence_check() -> None:
-    directory = pathlib.Path(__file__).parent
-    web.StaticResource("/", directory)
-
-    nodirectory = directory / "nonexistent-uPNiOEAg5d"
-    with pytest.raises(ValueError):
-        web.StaticResource("/", nodirectory)
 
 
 async def test_static_file_huge(aiohttp_client, tmp_path) -> None:

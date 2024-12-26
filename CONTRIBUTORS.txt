@@ -46,6 +46,7 @@ Anes Abismail
 Antoine Pietri
 Anton Kasyanov
 Anton Zhdan-Pushkin
+Arcadiy Ivanov
 Arseny Timoniq
 Artem Yushkovskiy
 Arthur Darcet
@@ -59,6 +60,7 @@ Bob Haddleton
 Boris Feld
 Boyi Chen
 Brett Cannon
+Brett Higgins
 Brian Bouterse
 Brian C. Lane
 Brian Muller
@@ -73,6 +75,7 @@ Chih-Yuan Chen
 Chris AtLee
 Chris Laws
 Chris Moore
+Chris Shucksmith
 Christopher Schmitt
 Claudiu Popa
 Colin Dunklau
@@ -218,6 +221,7 @@ Manuel Miranda
 Marat Sharafutdinov
 Marc Mueller
 Marco Paolini
+Marcus Stojcevich
 Mariano Anaya
 Mariusz Masztalerczuk
 Marko Kohtala
@@ -269,9 +273,11 @@ Pawel Kowalski
 Pawel Miech
 Pepe Osca
 Philipp A.
+Pierre-Louis Peeters
 Pieter van Beek
 Qiao Han
 Rafael Viotti
+Rahul Nahata
 Raphael Bialon
 Raúl Cumplido
 Required Field
@@ -351,6 +357,8 @@ William Grzybowski
 William S.
 Wilson Ong
 wouter bolsterlee
+Xavier Halloran
+Xiang Li
 Yang Zhou
 Yannick Koechlin
 Yannick Péroux
@@ -367,5 +375,6 @@ Yuvi Panda
 Zainab Lawal
 Zeal Wierslee
 Zlatan Sičanica
+Łukasz Setla
 Марк Коренберг
 Семён Марьясин

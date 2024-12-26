@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import io
 import pathlib
+import sys
 import urllib.parse
 import zlib
 from http.cookies import BaseCookie, Morsel, SimpleCookie
@@ -13,7 +14,7 @@ from multidict import CIMultiDict, CIMultiDictProxy, istr
 from yarl import URL
 
 import aiohttp
-from aiohttp import BaseConnector, hdrs, helpers, payload
+from aiohttp import BaseConnector, client_reqrep, hdrs, helpers, payload
 from aiohttp.client_exceptions import ClientConnectionError
 from aiohttp.client_reqrep import (
     ClientRequest,
@@ -279,9 +280,16 @@ def test_host_header_ipv4(make_request) -> None:
     assert req.headers["HOST"] == "127.0.0.2"
 
 
-def test_host_header_ipv6(make_request) -> None:
-    req = make_request("get", "http://[::2]")
-    assert req.headers["HOST"] == "[::2]"
+@pytest.mark.parametrize("yarl_supports_host_subcomponent", [True, False])
+def test_host_header_ipv6(make_request, yarl_supports_host_subcomponent: bool) -> None:
+    # Ensure the old path is tested for old yarl versions
+    with mock.patch.object(
+        client_reqrep,
+        "_YARL_SUPPORTS_HOST_SUBCOMPONENT",
+        yarl_supports_host_subcomponent,
+    ):
+        req = make_request("get", "http://[::2]")
+        assert req.headers["HOST"] == "[::2]"
 
 
 def test_host_header_ipv4_with_port(make_request) -> None:
@@ -450,6 +458,13 @@ def test_basic_auth_from_url(make_request) -> None:
     req = make_request("get", "http://nkim:1234@python.org")
     assert "AUTHORIZATION" in req.headers
     assert "Basic bmtpbToxMjM0" == req.headers["AUTHORIZATION"]
+    assert "python.org" == req.host
+
+
+def test_basic_auth_no_user_from_url(make_request) -> None:
+    req = make_request("get", "http://:1234@python.org")
+    assert "AUTHORIZATION" in req.headers
+    assert "Basic OjEyMzQ=" == req.headers["AUTHORIZATION"]
     assert "python.org" == req.host
 
 
@@ -996,8 +1011,15 @@ async def test_data_stream(loop, buf, conn) -> None:
     req = ClientRequest("POST", URL("http://python.org/"), data=gen(), loop=loop)
     assert req.chunked
     assert req.headers["TRANSFER-ENCODING"] == "chunked"
+    original_write_bytes = req.write_bytes
 
-    resp = await req.send(conn)
+    async def _mock_write_bytes(*args, **kwargs):
+        # Ensure the task is scheduled
+        await asyncio.sleep(0)
+        return await original_write_bytes(*args, **kwargs)
+
+    with mock.patch.object(req, "write_bytes", _mock_write_bytes):
+        resp = await req.send(conn)
     assert asyncio.isfuture(req._writer)
     await resp.wait_for_close()
     assert req._writer is None
@@ -1020,9 +1042,7 @@ async def test_data_stream_deprecated(loop, buf, conn) -> None:
     assert req.headers["TRANSFER-ENCODING"] == "chunked"
 
     resp = await req.send(conn)
-    assert asyncio.isfuture(req._writer)
     await resp.wait_for_close()
-    assert req._writer is None
     assert (
         buf.split(b"\r\n\r\n", 1)[1] == b"b\r\nbinary data\r\n7\r\n result\r\n0\r\n\r\n"
     )
@@ -1201,16 +1221,46 @@ async def test_oserror_on_write_bytes(loop, conn) -> None:
     await req.close()
 
 
-async def test_terminate(loop, conn) -> None:
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Needs Task.cancelling()")
+async def test_cancel_close(loop: asyncio.AbstractEventLoop, conn: mock.Mock) -> None:
     req = ClientRequest("get", URL("http://python.org"), loop=loop)
-    resp = await req.send(conn)
-    assert req._writer is not None
-    writer = req._writer = WriterMock()
-    writer.cancel = mock.Mock()
+    req._writer = asyncio.Future()  # type: ignore[assignment]
 
+    t = asyncio.create_task(req.close())
+
+    # Start waiting on _writer
+    await asyncio.sleep(0)
+
+    t.cancel()
+    # Cancellation should not be suppressed.
+    with pytest.raises(asyncio.CancelledError):
+        await t
+
+
+async def test_terminate(loop: asyncio.AbstractEventLoop, conn: mock.Mock) -> None:
+    req = ClientRequest("get", URL("http://python.org"), loop=loop)
+
+    async def _mock_write_bytes(*args, **kwargs):
+        # Ensure the task is scheduled
+        await asyncio.sleep(0)
+
+    with mock.patch.object(req, "write_bytes", _mock_write_bytes):
+        resp = await req.send(conn)
+
+    assert req._writer is not None
+    assert resp._writer is not None
+    await resp._writer
+    writer = WriterMock()
+    writer.done = mock.Mock(return_value=False)
+    writer.cancel = mock.Mock()
+    req._writer = writer
+    resp._writer = writer
+
+    assert req._writer is not None
+    assert resp._writer is not None
     req.terminate()
-    assert req._writer is None
     writer.cancel.assert_called_with()
+    writer.done.assert_called_with()
     resp.close()
 
     await req.close()
@@ -1222,9 +1272,19 @@ def test_terminate_with_closed_loop(loop, conn) -> None:
     async def go():
         nonlocal req, resp, writer
         req = ClientRequest("get", URL("http://python.org"))
-        resp = await req.send(conn)
+
+        async def _mock_write_bytes(*args, **kwargs):
+            # Ensure the task is scheduled
+            await asyncio.sleep(0)
+
+        with mock.patch.object(req, "write_bytes", _mock_write_bytes):
+            resp = await req.send(conn)
+
         assert req._writer is not None
-        writer = req._writer = WriterMock()
+        writer = WriterMock()
+        writer.done = mock.Mock(return_value=False)
+        req._writer = writer
+        resp._writer = writer
 
         await asyncio.sleep(0.05)
 
@@ -1407,3 +1467,30 @@ def test_basicauth_from_empty_netrc(
     """Test that no Authorization header is sent when netrc is empty"""
     req = make_request("get", "http://example.com", trust_env=True)
     assert hdrs.AUTHORIZATION not in req.headers
+
+
+async def test_connection_key_with_proxy() -> None:
+    """Verify the proxy headers are included in the ConnectionKey when a proxy is used."""
+    proxy = URL("http://proxy.example.com")
+    req = ClientRequest(
+        "GET",
+        URL("http://example.com"),
+        proxy=proxy,
+        proxy_headers={"X-Proxy": "true"},
+        loop=asyncio.get_running_loop(),
+    )
+    assert req.connection_key.proxy_headers_hash is not None
+    await req.close()
+
+
+async def test_connection_key_without_proxy() -> None:
+    """Verify the proxy headers are not included in the ConnectionKey when a proxy is used."""
+    # If proxy is unspecified, proxy_headers should be ignored
+    req = ClientRequest(
+        "GET",
+        URL("http://example.com"),
+        proxy_headers={"X-Proxy": "true"},
+        loop=asyncio.get_running_loop(),
+    )
+    assert req.connection_key.proxy_headers_hash is None
+    await req.close()

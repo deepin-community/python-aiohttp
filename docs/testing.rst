@@ -32,20 +32,6 @@ insert ``pytest_plugins = 'aiohttp.pytest_plugin'`` line into
 
 
 
-Provisional Status
-~~~~~~~~~~~~~~~~~~
-
-The module is a **provisional**.
-
-*aiohttp* has a year and half period for removing deprecated API
-(:ref:`aiohttp-backward-compatibility-policy`).
-
-But for :mod:`aiohttp.test_tools` the deprecation period could be reduced.
-
-Moreover we may break *backward compatibility* without *deprecation
-period* for some very strong reason.
-
-
 The Test Client and Servers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -76,14 +62,19 @@ Pytest
 The :data:`aiohttp_client` fixture available from pytest-aiohttp_ plugin
 allows you to create a client to make requests to test your app.
 
-A simple would be::
+To run these examples, you need to use `--asyncio-mode=auto` or add to your
+pytest config file::
+
+    asyncio_mode = auto
+
+A simple test would be::
 
     from aiohttp import web
 
     async def hello(request):
         return web.Response(text='Hello, world')
 
-    async def test_hello(aiohttp_client, loop):
+    async def test_hello(aiohttp_client):
         app = web.Application()
         app.router.add_get('/', hello)
         client = await aiohttp_client(app)
@@ -111,11 +102,11 @@ app test client::
             body='value: {}'.format(request.app[value]).encode('utf-8'))
 
     @pytest.fixture
-    def cli(loop, aiohttp_client):
+    async def cli(aiohttp_client):
         app = web.Application()
         app.router.add_get('/', previous)
         app.router.add_post('/', previous)
-        return loop.run_until_complete(aiohttp_client(app))
+        return await aiohttp_client(app)
 
     async def test_set_value(cli):
         resp = await cli.post('/', data={'value': 'foo'})
@@ -458,14 +449,12 @@ Framework Agnostic Utilities
 
 High level test creation::
 
-    from aiohttp.test_utils import TestClient, TestServer, loop_context
+    from aiohttp.test_utils import TestClient, TestServer
     from aiohttp import request
 
-    # loop_context is provided as a utility. You can use any
-    # asyncio.BaseEventLoop class in its place.
-    with loop_context() as loop:
+    async def test():
         app = _create_example_app()
-        with TestClient(TestServer(app), loop=loop) as client:
+        async with TestClient(TestServer(app)) as client:
 
             async def test_get_route():
                 nonlocal client
@@ -474,7 +463,7 @@ High level test creation::
                 text = await resp.text()
                 assert "Hello, world" in text
 
-            loop.run_until_complete(test_get_route())
+            await test_get_route()
 
 
 If it's preferred to handle the creation / teardown on a more granular
@@ -482,10 +471,10 @@ basis, the TestClient object can be used directly::
 
     from aiohttp.test_utils import TestClient, TestServer
 
-    with loop_context() as loop:
+    async def test():
         app = _create_example_app()
-        client = TestClient(TestServer(app), loop=loop)
-        loop.run_until_complete(client.start_server())
+        client = TestClient(TestServer(app))
+        await client.start_server()
         root = "http://127.0.0.1:{}".format(port)
 
         async def test_get_route():
@@ -494,8 +483,8 @@ basis, the TestClient object can be used directly::
             text = await resp.text()
             assert "Hello, world" in text
 
-        loop.run_until_complete(test_get_route())
-        loop.run_until_complete(client.close())
+        await test_get_route()
+        await client.close()
 
 
 A full list of the utilities provided can be found at the

@@ -17,6 +17,7 @@ from aiohttp.http_parser import (
     NO_EXTENSIONS,
     DeflateBuffer,
     HttpPayloadParser,
+    HttpRequestParser,
     HttpRequestParserPy,
     HttpResponseParserPy,
     HttpVersion,
@@ -84,6 +85,7 @@ def response(loop: Any, protocol: Any, request: Any):
         max_line_size=8190,
         max_headers=32768,
         max_field_size=8190,
+        read_until_eof=True,
     )
 
 
@@ -294,9 +296,20 @@ def test_parse_headers_longline(parser: Any) -> None:
         parser.feed_data(text)
 
 
+@pytest.fixture
+def xfail_c_parser_status(request) -> None:
+    if isinstance(request.getfixturevalue("parser"), HttpRequestParserPy):
+        return
+    request.node.add_marker(
+        pytest.mark.xfail(
+            reason="Regression test for Py parser. May match C behaviour later.",
+            raises=http_exceptions.BadStatusLine,
+        )
+    )
+
+
+@pytest.mark.usefixtures("xfail_c_parser_status")
 def test_parse_unusual_request_line(parser) -> None:
-    if not isinstance(response, HttpResponseParserPy):
-        pytest.xfail("Regression test for Py parser. May match C behaviour later.")
     text = b"#smol //a HTTP/1.3\r\n\r\n"
     messages, upgrade, tail = parser.feed_data(text)
     assert len(messages) == 1
@@ -503,6 +516,23 @@ def test_request_te_chunked123(parser: Any) -> None:
         parser.feed_data(text)
 
 
+async def test_request_te_last_chunked(parser: Any) -> None:
+    text = b"GET /test HTTP/1.1\r\nTransfer-Encoding: not, chunked\r\n\r\n1\r\nT\r\n3\r\nest\r\n0\r\n\r\n"
+    messages, upgrade, tail = parser.feed_data(text)
+    # https://www.rfc-editor.org/rfc/rfc9112#section-6.3-2.4.3
+    assert await messages[0][1].read() == b"Test"
+
+
+def test_request_te_first_chunked(parser: Any) -> None:
+    text = b"GET /test HTTP/1.1\r\nTransfer-Encoding: chunked, not\r\n\r\n1\r\nT\r\n3\r\nest\r\n0\r\n\r\n"
+    # https://www.rfc-editor.org/rfc/rfc9112#section-6.3-2.4.3
+    with pytest.raises(
+        http_exceptions.BadHttpMessage,
+        match="nvalid `Transfer-Encoding`",
+    ):
+        parser.feed_data(text)
+
+
 def test_conn_upgrade(parser: Any) -> None:
     text = (
         b"GET /test HTTP/1.1\r\n"
@@ -632,9 +662,6 @@ def test_invalid_header_spacing(parser, pad1: bytes, pad2: bytes, hdr: bytes) ->
     if pad1 == pad2 == b"" and hdr != b"":
         # one entry in param matrix is correct: non-empty name, not padded
         expectation = nullcontext()
-    if pad1 == pad2 == hdr == b"":
-        if not isinstance(response, HttpResponseParserPy):
-            pytest.xfail("Regression test for Py parser. May match C behaviour later.")
     with expectation:
         parser.feed_data(text)
 
@@ -800,7 +827,15 @@ def test_http_request_bad_status_line_whitespace(parser: Any) -> None:
         parser.feed_data(text)
 
 
-def test_http_request_upgrade(parser: Any) -> None:
+def test_http_request_message_after_close(parser: HttpRequestParser) -> None:
+    text = b"GET / HTTP/1.1\r\nConnection: close\r\n\r\nInvalid\r\n\r\n"
+    with pytest.raises(
+        http_exceptions.BadHttpMessage, match="Data after `Connection: close`"
+    ):
+        parser.feed_data(text)
+
+
+def test_http_request_upgrade(parser: HttpRequestParser) -> None:
     text = (
         b"GET /test HTTP/1.1\r\n"
         b"connection: upgrade\r\n"
@@ -815,9 +850,40 @@ def test_http_request_upgrade(parser: Any) -> None:
     assert tail == b"some raw data"
 
 
+async def test_http_request_upgrade_unknown(parser: Any) -> None:
+    text = (
+        b"POST / HTTP/1.1\r\n"
+        b"Connection: Upgrade\r\n"
+        b"Content-Length: 2\r\n"
+        b"Upgrade: unknown\r\n"
+        b"Content-Type: application/json\r\n\r\n"
+        b"{}"
+    )
+    messages, upgrade, tail = parser.feed_data(text)
+
+    msg = messages[0][0]
+    assert not msg.should_close
+    assert msg.upgrade
+    assert not upgrade
+    assert not msg.chunked
+    assert tail == b""
+    assert await messages[0][-1].read() == b"{}"
+
+
+@pytest.fixture
+def xfail_c_parser_url(request) -> None:
+    if isinstance(request.getfixturevalue("parser"), HttpRequestParserPy):
+        return
+    request.node.add_marker(
+        pytest.mark.xfail(
+            reason="Regression test for Py parser. May match C behaviour later.",
+            raises=http_exceptions.InvalidURLError,
+        )
+    )
+
+
+@pytest.mark.usefixtures("xfail_c_parser_url")
 def test_http_request_parser_utf8_request_line(parser) -> None:
-    if not isinstance(response, HttpResponseParserPy):
-        pytest.xfail("Regression test for Py parser. May match C behaviour later.")
     messages, upgrade, tail = parser.feed_data(
         # note the truncated unicode sequence
         b"GET /P\xc3\xbcnktchen\xa0\xef\xb7 HTTP/1.1\r\n" +
@@ -837,7 +903,9 @@ def test_http_request_parser_utf8_request_line(parser) -> None:
     assert msg.compression is None
     assert not msg.upgrade
     assert not msg.chunked
-    assert msg.url.path == URL("/P%C3%BCnktchen\udca0\udcef\udcb7").path
+    # python HTTP parser depends on Cython and CPython URL to match
+    # .. but yarl.URL("/abs") is not equal to URL.build(path="/abs"), see #6409
+    assert msg.url == URL.build(path="/Pünktchen\udca0\udcef\udcb7", encoded=True)
 
 
 def test_http_request_parser_utf8(parser) -> None:
@@ -1113,6 +1181,23 @@ async def test_http_response_parser_bad_chunked_strict_c(loop, protocol) -> None
         response.feed_data(text)
 
 
+async def test_http_response_parser_notchunked(response) -> None:
+    text = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: notchunked\r\n\r\n1\r\nT\r\n3\r\nest\r\n0\r\n\r\n"
+    messages, upgrade, tail = response.feed_data(text)
+    response.feed_eof()
+
+    # https://www.rfc-editor.org/rfc/rfc9112#section-6.3-2.4.2
+    assert await messages[0][1].read() == b"1\r\nT\r\n3\r\nest\r\n0\r\n\r\n"
+
+
+async def test_http_response_parser_last_chunked(response) -> None:
+    text = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: not, chunked\r\n\r\n1\r\nT\r\n3\r\nest\r\n0\r\n\r\n"
+    messages, upgrade, tail = response.feed_data(text)
+
+    # https://www.rfc-editor.org/rfc/rfc9112#section-6.3-2.4.2
+    assert await messages[0][1].read() == b"Test"
+
+
 def test_http_response_parser_bad(response) -> None:
     with pytest.raises(http_exceptions.BadHttpMessage):
         response.feed_data(b"HTT/1\r\n\r\n")
@@ -1209,8 +1294,8 @@ def test_parse_chunked_payload_chunk_extension(parser) -> None:
     assert payload.is_eof()
 
 
-def _test_parse_no_length_or_te_on_post(loop, protocol, request_cls):
-    parser = request_cls(protocol, loop, readall=True)
+def test_parse_no_length_or_te_on_post(loop: Any, protocol: Any, request_cls: Any):
+    parser = request_cls(protocol, loop, limit=2**16)
     text = b"POST /test HTTP/1.1\r\n\r\n"
     msg, payload = parser.feed_data(text)[0][0]
 
@@ -1369,6 +1454,29 @@ def test_parse_chunked_payload_empty_body_than_another_chunked(
     assert b"second" == b"".join(d for d in payload._buffer)
 
 
+async def test_parse_chunked_payload_split_chunks(response: Any) -> None:
+    network_chunks = (
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
+        b"5\r\nfi",
+        b"rst",
+        # This simulates a bug in lax mode caused when the \r\n separator, before the
+        # next HTTP chunk, appears at the start of the next network chunk.
+        b"\r\n",
+        b"6",
+        b"\r",
+        b"\n",
+        b"second\r",
+        b"\n0\r\n\r\n",
+    )
+    reader = response.feed_data(network_chunks[0])[0][0][1]
+    for c in network_chunks[1:]:
+        response.feed_data(c)
+
+    assert response.feed_eof() is None
+    assert reader.is_eof()
+    assert await reader.read() == b"firstsecond"
+
+
 def test_partial_url(parser: Any) -> None:
     messages, upgrade, tail = parser.feed_data(b"GET /te")
     assert len(messages) == 0
@@ -1454,29 +1562,16 @@ def test_parse_bad_method_for_c_parser_raises(loop, protocol):
 
 class TestParsePayload:
     async def test_parse_eof_payload(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
-        p = HttpPayloadParser(out, readall=True)
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
+        p = HttpPayloadParser(out)
         p.feed_data(b"data")
         p.feed_eof()
 
         assert out.is_eof()
         assert [(bytearray(b"data"), 4)] == list(out._buffer)
 
-    async def test_parse_no_body(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
-        p = HttpPayloadParser(out, method="PUT")
-
-        assert out.is_eof()
-        assert p.done
-
     async def test_parse_length_payload_eof(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
 
         p = HttpPayloadParser(out, length=4)
         p.feed_data(b"da")
@@ -1485,9 +1580,7 @@ class TestParsePayload:
             p.feed_eof()
 
     async def test_parse_chunked_payload_size_error(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         p = HttpPayloadParser(out, chunked=True)
         with pytest.raises(http_exceptions.TransferEncodingError):
             p.feed_data(b"blah\r\n")
@@ -1550,9 +1643,7 @@ class TestParsePayload:
         assert b"asdf" == b"".join(out._buffer)
 
     async def test_http_payload_parser_length(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         p = HttpPayloadParser(out, length=2)
         eof, tail = p.feed_data(b"1245")
         assert eof
@@ -1565,9 +1656,7 @@ class TestParsePayload:
         COMPRESSED = b"x\x9cKI,I\x04\x00\x04\x00\x01\x9b"
 
         length = len(COMPRESSED)
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         p = HttpPayloadParser(out, length=length, compression="deflate")
         p.feed_data(COMPRESSED)
         assert b"data" == b"".join(d for d, _ in out._buffer)
@@ -1579,9 +1668,7 @@ class TestParsePayload:
         COMPRESSED = b"KI,I\x04\x00"
 
         length = len(COMPRESSED)
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         p = HttpPayloadParser(out, length=length, compression="deflate")
         p.feed_data(COMPRESSED)
         assert b"data" == b"".join(d for d, _ in out._buffer)
@@ -1592,19 +1679,15 @@ class TestParsePayload:
         COMPRESSED = b"\x18\x95KI,I\x04\x00\x04\x00\x01\x9b"
 
         length = len(COMPRESSED)
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         p = HttpPayloadParser(out, length=length, compression="deflate")
         p.feed_data(COMPRESSED)
         assert b"data" == b"".join(d for d, _ in out._buffer)
         assert out.is_eof()
 
     async def test_http_payload_parser_deflate_split(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
-        p = HttpPayloadParser(out, compression="deflate", readall=True)
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
+        p = HttpPayloadParser(out, compression="deflate")
         # Feeding one correct byte should be enough to choose exact
         # deflate decompressor
         p.feed_data(b"x", 1)
@@ -1613,10 +1696,8 @@ class TestParsePayload:
         assert b"data" == b"".join(d for d, _ in out._buffer)
 
     async def test_http_payload_parser_deflate_split_err(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
-        p = HttpPayloadParser(out, compression="deflate", readall=True)
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
+        p = HttpPayloadParser(out, compression="deflate")
         # Feeding one wrong byte should be enough to choose exact
         # deflate decompressor
         p.feed_data(b"K", 1)
@@ -1625,9 +1706,7 @@ class TestParsePayload:
         assert b"data" == b"".join(d for d, _ in out._buffer)
 
     async def test_http_payload_parser_length_zero(self, stream) -> None:
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         p = HttpPayloadParser(out, length=0)
         assert p.done
         assert out.is_eof()
@@ -1635,9 +1714,7 @@ class TestParsePayload:
     @pytest.mark.skipif(brotli is None, reason="brotli is not installed")
     async def test_http_payload_brotli(self, stream) -> None:
         compressed = brotli.compress(b"brotli data")
-        out = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        out = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         p = HttpPayloadParser(out, length=len(compressed), compression="br")
         p.feed_data(compressed)
         assert b"brotli data" == b"".join(d for d, _ in out._buffer)
@@ -1646,9 +1723,7 @@ class TestParsePayload:
 
 class TestDeflateBuffer:
     async def test_feed_data(self, stream) -> None:
-        buf = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        buf = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         dbuf = DeflateBuffer(buf, "deflate")
 
         dbuf.decompressor = mock.Mock()
@@ -1659,9 +1734,7 @@ class TestDeflateBuffer:
         assert [b"line"] == list(d for d, _ in buf._buffer)
 
     async def test_feed_data_err(self, stream) -> None:
-        buf = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        buf = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         dbuf = DeflateBuffer(buf, "deflate")
 
         exc = ValueError()
@@ -1674,9 +1747,7 @@ class TestDeflateBuffer:
             dbuf.feed_data(b"xsomedata", 9)
 
     async def test_feed_eof(self, stream) -> None:
-        buf = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        buf = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         dbuf = DeflateBuffer(buf, "deflate")
 
         dbuf.decompressor = mock.Mock()
@@ -1687,9 +1758,7 @@ class TestDeflateBuffer:
         assert buf._eof
 
     async def test_feed_eof_err_deflate(self, stream) -> None:
-        buf = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        buf = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         dbuf = DeflateBuffer(buf, "deflate")
 
         dbuf.decompressor = mock.Mock()
@@ -1700,9 +1769,7 @@ class TestDeflateBuffer:
             dbuf.feed_eof()
 
     async def test_feed_eof_no_err_gzip(self, stream) -> None:
-        buf = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        buf = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         dbuf = DeflateBuffer(buf, "gzip")
 
         dbuf.decompressor = mock.Mock()
@@ -1713,9 +1780,7 @@ class TestDeflateBuffer:
         assert [b"line"] == list(d for d, _ in buf._buffer)
 
     async def test_feed_eof_no_err_brotli(self, stream) -> None:
-        buf = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        buf = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         dbuf = DeflateBuffer(buf, "br")
 
         dbuf.decompressor = mock.Mock()
@@ -1726,9 +1791,7 @@ class TestDeflateBuffer:
         assert [b"line"] == list(d for d, _ in buf._buffer)
 
     async def test_empty_body(self, stream) -> None:
-        buf = aiohttp.FlowControlDataQueue(
-            stream, 2**16, loop=asyncio.get_event_loop()
-        )
+        buf = aiohttp.FlowControlDataQueue(stream, 2**16, loop=asyncio.get_event_loop())
         dbuf = DeflateBuffer(buf, "deflate")
         dbuf.feed_eof()
 

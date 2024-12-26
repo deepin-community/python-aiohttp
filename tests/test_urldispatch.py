@@ -1,7 +1,7 @@
 import pathlib
 import re
 from collections.abc import Container, Iterable, Mapping, MutableMapping, Sized
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import pytest
 from re_assert import Matches
@@ -339,6 +339,21 @@ def test_route_dynamic(router) -> None:
     assert route is route2
 
 
+def test_add_static_path_checks(router: any, tmp_path: pathlib.Path) -> None:
+    """Test that static paths must exist and be directories."""
+    with pytest.raises(ValueError, match="does not exist"):
+        router.add_static("/", tmp_path / "does-not-exist")
+        with pytest.raises(ValueError, match="is not a directory"):
+            router.add_static("/", __file__)
+
+
+def test_add_static_path_resolution(router: any) -> None:
+    """Test that static paths are expanded and absolute."""
+    res = router.add_static("/", "~/..")
+    directory = str(res.get_info()["directory"])
+    assert directory == str(pathlib.Path.home().parent)
+
+
 def test_add_static(router) -> None:
     resource = router.add_static(
         "/st", pathlib.Path(aiohttp.__file__).parent, name="static"
@@ -515,19 +530,24 @@ def test_static_remove_trailing_slash(router) -> None:
     assert "/prefix" == route._prefix
 
 
-async def test_add_route_with_re(router) -> None:
+@pytest.mark.parametrize(
+    "pattern,url,expected",
+    (
+        (r"{to:\d+}", r"1234", {"to": "1234"}),
+        ("{name}.html", "test.html", {"name": "test"}),
+        (r"{fn:\w+ \d+}", "abc 123", {"fn": "abc 123"}),
+        (r"{fn:\w+\s\d+}", "abc 123", {"fn": "abc 123"}),
+    ),
+)
+async def test_add_route_with_re(
+    router: web.UrlDispatcher, pattern: str, url: str, expected
+) -> None:
     handler = make_handler()
-    router.add_route("GET", r"/handler/{to:\d+}", handler)
-
-    req = make_mocked_request("GET", "/handler/1234")
+    router.add_route("GET", f"/handler/{pattern}", handler)
+    req = make_mocked_request("GET", f"/handler/{url}")
     info = await router.resolve(req)
     assert info is not None
-    assert {"to": "1234"} == info
-
-    router.add_route("GET", r"/handler/{name}.html", handler)
-    req = make_mocked_request("GET", "/handler/test.html")
-    info = await router.resolve(req)
-    assert {"name": "test"} == info
+    assert info == expected
 
 
 async def test_add_route_with_re_and_slashes(router) -> None:
@@ -720,6 +740,17 @@ async def test_dynamic_match_unquoted_path(router) -> None:
     req = make_mocked_request("GET", f"/path/{resource_id}")
     match_info = await router.resolve(req)
     assert match_info == {"path": "path", "subpath": unquote(resource_id)}
+
+
+async def test_dynamic_match_double_quoted_path(router: web.UrlDispatcher) -> None:
+    """Verify that double-quoted path is unquoted only once."""
+    handler = make_handler()
+    router.add_route("GET", "/{path}/{subpath}", handler)
+    resource_id = quote("my/path|with!some%strange$characters", safe="")
+    double_quoted_resource_id = quote(resource_id, safe="")
+    req = make_mocked_request("GET", f"/path/{double_quoted_resource_id}")
+    match_info = await router.resolve(req)
+    assert match_info == {"path": "path", "subpath": resource_id}
 
 
 def test_add_route_not_started_with_slash(router) -> None:
@@ -1258,10 +1289,17 @@ async def test_prefixed_subapp_overlap(app) -> None:
     subapp2.router.add_get("/b", handler2)
     app.add_subapp("/ss", subapp2)
 
+    subapp3 = web.Application()
+    handler3 = make_handler()
+    subapp3.router.add_get("/c", handler3)
+    app.add_subapp("/s/s", subapp3)
+
     match_info = await app.router.resolve(make_mocked_request("GET", "/s/a"))
     assert match_info.route.handler is handler1
     match_info = await app.router.resolve(make_mocked_request("GET", "/ss/b"))
     assert match_info.route.handler is handler2
+    match_info = await app.router.resolve(make_mocked_request("GET", "/s/s/c"))
+    assert match_info.route.handler is handler3
 
 
 async def test_prefixed_subapp_empty_route(app) -> None:
