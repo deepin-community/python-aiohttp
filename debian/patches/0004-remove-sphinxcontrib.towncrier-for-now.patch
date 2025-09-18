@@ -4,17 +4,17 @@ Subject: Remove sphinxcontrib.towncrier for now
 
 The upstream sdist doesn't ship the `CHANGES/` directory.
 ---
- docs/changes.rst      | 10 +---------
- docs/conf.py          |  2 +-
- docs/contributing.rst |  2 +-
- docs/index.rst        |  2 +-
- 4 files changed, 4 insertions(+), 12 deletions(-)
+ docs/changes.rst      | 8 +-------
+ docs/conf.py          | 2 +-
+ docs/contributing.rst | 2 +-
+ docs/index.rst        | 2 +-
+ 4 files changed, 4 insertions(+), 10 deletions(-)
 
 diff --git a/docs/changes.rst b/docs/changes.rst
-index 089f672..9b8cb7e 100644
+index 8c7a9bb..9b8cb7e 100644
 --- a/docs/changes.rst
 +++ b/docs/changes.rst
-@@ -9,12 +9,4 @@ Changelog
+@@ -9,10 +9,4 @@ Changelog
     To be included in v\ |release| (if present)
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
  
@@ -25,17 +25,15 @@ index 089f672..9b8cb7e 100644
 -
 -.. include:: ../CHANGES.rst
 -   :start-after: .. towncrier release notes start
--
--.. include:: ../HISTORY.rst
 +Temporarily removed in Debian, sorry.
 diff --git a/docs/conf.py b/docs/conf.py
-index 217c6ba..20b9fda 100644
+index 8081e9e..e3add7f 100644
 --- a/docs/conf.py
 +++ b/docs/conf.py
 @@ -59,7 +59,7 @@ extensions = [
+     "sphinx.ext.intersphinx",
      "sphinx.ext.viewcode",
      # Third-party extensions:
-     "sphinxcontrib.blockdiag",
 -    "sphinxcontrib.towncrier.ext",  # provides `towncrier-draft-entries` directive
 +    # "sphinxcontrib.towncrier.ext",  # provides `towncrier-draft-entries` directive
  ]

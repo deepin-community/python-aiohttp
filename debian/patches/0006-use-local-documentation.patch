@@ -3,14 +3,14 @@ Date: Sun, 18 Aug 2024 12:01:35 +0100
 Subject: Use local Sphinx inventories where available
 
 ---
- docs/conf.py | 32 +++++++++++++++++++-------------
- 1 file changed, 19 insertions(+), 13 deletions(-)
+ docs/conf.py | 33 +++++++++++++++++++--------------
+ 1 file changed, 19 insertions(+), 14 deletions(-)
 
 diff --git a/docs/conf.py b/docs/conf.py
-index 16c00fa..d9a2cc3 100644
+index a2df0b1..d35ae2a 100644
 --- a/docs/conf.py
 +++ b/docs/conf.py
-@@ -70,19 +70,25 @@ try:
+@@ -70,20 +70,25 @@ try:
  except ImportError:
      pass
  
@@ -19,6 +19,7 @@ index 16c00fa..d9a2cc3 100644
 -    "pytest": ("http://docs.pytest.org/en/latest/", None),
 -    "python": ("http://docs.python.org/3", None),
 -    "multidict": ("https://multidict.readthedocs.io/en/stable/", None),
+-    "propcache": ("https://propcache.aio-libs.org/en/stable", None),
 -    "yarl": ("https://yarl.readthedocs.io/en/stable/", None),
 -    "aiosignal": ("https://aiosignal.readthedocs.io/en/stable/", None),
 -    "aiohttpjinja2": ("https://aiohttp-jinja2.readthedocs.io/en/stable/", None),

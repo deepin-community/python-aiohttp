@@ -3,13 +3,14 @@ import datetime
 import gzip
 import io
 import json
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from typing import AsyncIterator, Optional
 from unittest import mock
 
 import aiosignal
 import pytest
-from multidict import CIMultiDict, CIMultiDictProxy
+from multidict import CIMultiDict, CIMultiDictProxy, MultiDict
 from re_assert import Matches
 
 from aiohttp import HttpVersion, HttpVersion10, HttpVersion11, hdrs
@@ -461,7 +462,7 @@ async def test_compression_default_coding() -> None:
 
     msg = await resp.prepare(req)
 
-    msg.enable_compression.assert_called_with("deflate")
+    msg.enable_compression.assert_called_with("deflate", zlib.Z_DEFAULT_STRATEGY)
     assert "deflate" == resp.headers.get(hdrs.CONTENT_ENCODING)
     assert msg.filter is not None
 
@@ -476,7 +477,26 @@ async def test_force_compression_deflate() -> None:
     assert resp.compression
 
     msg = await resp.prepare(req)
-    msg.enable_compression.assert_called_with("deflate")
+    msg.enable_compression.assert_called_with("deflate", zlib.Z_DEFAULT_STRATEGY)
+    assert "deflate" == resp.headers.get(hdrs.CONTENT_ENCODING)
+
+
+async def test_force_compression_deflate_large_payload() -> None:
+    """Make sure a warning is thrown for large payloads compressed in the event loop."""
+    req = make_request(
+        "GET", "/", headers=CIMultiDict({hdrs.ACCEPT_ENCODING: "gzip, deflate"})
+    )
+    resp = Response(body=b"large")
+
+    resp.enable_compression(ContentCoding.deflate)
+    assert resp.compression
+
+    with (
+        pytest.warns(Warning, match="Synchronous compression of large response bodies"),
+        mock.patch("aiohttp.web_response.LARGE_BODY_SIZE", 2),
+    ):
+        msg = await resp.prepare(req)
+        assert msg is not None
     assert "deflate" == resp.headers.get(hdrs.CONTENT_ENCODING)
 
 
@@ -488,7 +508,7 @@ async def test_force_compression_no_accept_deflate() -> None:
     assert resp.compression
 
     msg = await resp.prepare(req)
-    msg.enable_compression.assert_called_with("deflate")
+    msg.enable_compression.assert_called_with("deflate", zlib.Z_DEFAULT_STRATEGY)
     assert "deflate" == resp.headers.get(hdrs.CONTENT_ENCODING)
 
 
@@ -502,7 +522,7 @@ async def test_force_compression_gzip() -> None:
     assert resp.compression
 
     msg = await resp.prepare(req)
-    msg.enable_compression.assert_called_with("gzip")
+    msg.enable_compression.assert_called_with("gzip", zlib.Z_DEFAULT_STRATEGY)
     assert "gzip" == resp.headers.get(hdrs.CONTENT_ENCODING)
 
 
@@ -514,7 +534,7 @@ async def test_force_compression_no_accept_gzip() -> None:
     assert resp.compression
 
     msg = await resp.prepare(req)
-    msg.enable_compression.assert_called_with("gzip")
+    msg.enable_compression.assert_called_with("gzip", zlib.Z_DEFAULT_STRATEGY)
     assert "gzip" == resp.headers.get(hdrs.CONTENT_ENCODING)
 
 
@@ -845,6 +865,10 @@ def test_response_cookies() -> None:
 
     resp.set_cookie("name", "value")
     assert str(resp.cookies) == "Set-Cookie: name=value; Path=/"
+    resp.set_cookie("name", "")
+    assert str(resp.cookies) == 'Set-Cookie: name=""; Path=/'
+    resp.set_cookie("name", "value")
+    assert str(resp.cookies) == "Set-Cookie: name=value; Path=/"
     resp.set_cookie("name", "other_value")
     assert str(resp.cookies) == "Set-Cookie: name=other_value; Path=/"
 
@@ -860,6 +884,8 @@ def test_response_cookies() -> None:
         "expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/"
     )
     assert Matches(expected) == str(resp.cookies)
+    resp.del_cookie("name")
+    assert str(resp.cookies) == Matches(expected)
 
     resp.set_cookie("name", "value", domain="local.host")
     expected = "Set-Cookie: name=value; Domain=local.host; Path=/"
@@ -1175,7 +1201,7 @@ class CustomIO(io.IOBase):
         (BodyPartReader("x", CIMultiDictProxy(CIMultiDict()), mock.Mock()), None),
         (
             mpwriter,
-            "--x\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 4\r\n\r\ntest",
+            "--x\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: 4\r\n\r\ntest",
         ),
     ),
 )
@@ -1453,3 +1479,15 @@ class TestJSONResponse:
     def test_content_type_is_overrideable(self) -> None:
         resp = json_response({"foo": 42}, content_type="application/vnd.json+api")
         assert "application/vnd.json+api" == resp.content_type
+
+
+@pytest.mark.parametrize("loose_header_type", (MultiDict, CIMultiDict, dict))
+async def test_passing_cimultidict_to_web_response_not_mutated(
+    loose_header_type: type,
+) -> None:
+    req = make_request("GET", "/")
+    headers = loose_header_type({})
+    resp = Response(body=b"answer", headers=headers)
+    await resp.prepare(req)
+    assert resp.content_length == 6
+    assert not headers
