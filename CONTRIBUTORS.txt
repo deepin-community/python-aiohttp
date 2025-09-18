@@ -1,6 +1,7 @@
 - Contributors -
 ----------------
 A. Jesse Jiryu Davis
+Abdur Rehman Ali
 Adam Bannister
 Adam Cooper
 Adam Horacek
@@ -8,6 +9,7 @@ Adam Mills
 Adrian Krupa
 Adrián Chaves
 Ahmed Tahri
+Alan Bogarin
 Alan Tse
 Alec Hanefeld
 Alejandro Gómez
@@ -29,6 +31,7 @@ Alexandru Mihai
 Alexey Firsov
 Alexey Nikitin
 Alexey Popravka
+Alexey Stavrov
 Alexey Stepanov
 Amin Etesamian
 Amit Tulshyan
@@ -40,6 +43,7 @@ Andrej Antonov
 Andrew Leech
 Andrew Lytvyn
 Andrew Svetlov
+Andrew Top
 Andrew Zhou
 Andrii Soldatenko
 Anes Abismail
@@ -128,6 +132,7 @@ Franek Magiera
 Frederik Gladhorn
 Frederik Peter Aalund
 Gabriel Tremblay
+Gang Ji
 Gary Wilson Jr.
 Gennady Andreyev
 Georges Dubus
@@ -164,10 +169,12 @@ Jaesung Lee
 Jake Davis
 Jakob Ackermann
 Jakub Wilk
+James Ward
 Jan Buchar
 Jan Gosmann
 Jarno Elonen
 Jashandeep Sohi
+Javier Torres
 Jean-Baptiste Estival
 Jens Steinhauser
 Jeonghun Lee
@@ -202,6 +209,7 @@ Kevin Samuel
 Kimmo Parviainen-Jalanko
 Kirill Klenov
 Kirill Malovitsa
+Konstantin Shutkin
 Konstantin Valetov
 Krzysztof Blazewicz
 Kyrylo Perevozchikov
@@ -216,6 +224,7 @@ Lubomir Gelo
 Ludovic Gasc
 Luis Pedrosa
 Lukasz Marcin Dobrzanski
+Lénárd Szolnoki
 Makc Belousow
 Manuel Miranda
 Marat Sharafutdinov
@@ -237,6 +246,7 @@ Matthieu Hauglustaine
 Matthieu Rigal
 Matvey Tingaev
 Meet Mangukiya
+Meshya
 Michael Ihnatenko
 Michał Górny
 Mikhail Burshteyn
@@ -298,6 +308,7 @@ Sergey Skripnick
 Serhii Charykov
 Serhii Kostel
 Serhiy Storchaka
+Shubh Agarwal
 Simon Kennedy
 Sin-Woo Bang
 Stanislas Plum
@@ -358,6 +369,7 @@ William S.
 Wilson Ong
 wouter bolsterlee
 Xavier Halloran
+Xi Rui
 Xiang Li
 Yang Zhou
 Yannick Koechlin

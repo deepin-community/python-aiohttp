@@ -313,6 +313,13 @@ async def test_filter_cookies_with_domain_path_lookup_multilevelpath(
         assert c in expected_cookies
 
 
+async def test_filter_cookies_str_deprecated(loop: asyncio.AbstractEventLoop) -> None:
+    jar = CookieJar()
+    jar.update_cookies(SimpleCookie("shared-cookie=first; Domain=example.com;"))
+    with pytest.warns(DeprecationWarning):
+        jar.filter_cookies("http://éé.com")
+
+
 async def test_domain_filter_ip_cookie_send() -> None:
     jar = CookieJar()
     cookies = SimpleCookie(
@@ -800,6 +807,7 @@ class TestCookieJarSafe(TestCookieJarBase):
 async def test_dummy_cookie_jar() -> None:
     cookie = SimpleCookie("foo=bar; Domain=example.com;")
     dummy_jar = DummyCookieJar()
+    assert dummy_jar.quote_cookie is True
     assert len(dummy_jar) == 0
     dummy_jar.update_cookies(cookie)
     assert len(dummy_jar) == 0

@@ -14,7 +14,7 @@ Build-Depends: debhelper-compat (= 13),
                python3-sphinx,
                python3-multidict,
                python3-async-timeout,
-               python3-yarl (>= 1.12.0),
+               python3-yarl (>= 1.18.3),
                cython3,
                python3-aiosignal,
                python3-aiodns (>= 3.2.0),
@@ -34,7 +34,7 @@ Build-Depends: debhelper-compat (= 13),
                python3-doc,
                python3-sphinxcontrib.blockdiag
 Rules-Requires-Root: no
-Standards-Version: 4.7.0
+Standards-Version: 4.7.2
 Homepage: https://aiohttp.readthedocs.org
 Vcs-Git: https://salsa.debian.org/python-team/packages/python-aiohttp.git
 Vcs-Browser: https://salsa.debian.org/python-team/packages/python-aiohttp

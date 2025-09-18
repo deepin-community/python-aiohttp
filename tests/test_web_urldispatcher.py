@@ -553,14 +553,15 @@ async def test_access_compressed_file_as_symlink(
 
 
 async def test_access_special_resource(
-    tmp_path_factory: pytest.TempPathFactory, aiohttp_client: AiohttpClient
+    unix_sockname: str, aiohttp_client: AiohttpClient
 ) -> None:
     """Test access to non-regular files is forbidden using a UNIX domain socket."""
     if not getattr(socket, "AF_UNIX", None):
         pytest.skip("UNIX domain sockets not supported")
 
-    tmp_path = tmp_path_factory.mktemp("special")
-    my_special = tmp_path / "sock"
+    my_special = pathlib.Path(unix_sockname)
+    tmp_path = my_special.parent
+
     my_socket = socket.socket(socket.AF_UNIX)
     my_socket.bind(str(my_special))
     assert my_special.is_socket()
@@ -584,16 +585,17 @@ async def test_access_mock_special_resource(
     my_special.touch()
 
     real_result = my_special.stat()
-    real_stat = pathlib.Path.stat
+    real_stat = os.stat
 
-    def mock_stat(self: pathlib.Path, **kwargs: Any) -> os.stat_result:
-        s = real_stat(self, **kwargs)
+    def mock_stat(path: Any, **kwargs: Any) -> os.stat_result:
+        s = real_stat(path, **kwargs)
         if os.path.samestat(s, real_result):
             mock_mode = S_IFIFO | S_IMODE(s.st_mode)
             s = os.stat_result([mock_mode] + list(s)[1:])
         return s
 
     monkeypatch.setattr("pathlib.Path.stat", mock_stat)
+    monkeypatch.setattr("os.stat", mock_stat)
 
     app = web.Application()
     app.router.add_static("/", str(tmp_path))

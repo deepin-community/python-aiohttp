@@ -696,9 +696,8 @@ async def test_http11_keep_alive_default(aiohttp_client) -> None:
     await resp.release()
 
 
-@pytest.mark.xfail
-async def test_http10_keep_alive_default(aiohttp_client) -> None:
-    async def handler(request):
+async def test_http10_keep_alive_default(aiohttp_client: AiohttpClient) -> None:
+    async def handler(request: web.Request) -> web.Response:
         return web.Response()
 
     app = web.Application()
@@ -1688,9 +1687,7 @@ async def test_app_max_client_size(aiohttp_client) -> None:
         resp = await client.post("/", data=data)
     assert 413 == resp.status
     resp_text = await resp.text()
-    assert (
-        "Maximum request body size 1048576 exceeded, " "actual body size" in resp_text
-    )
+    assert "Maximum request body size 1048576 exceeded, actual body size" in resp_text
     # Maximum request body size X exceeded, actual body size X
     body_size = int(resp_text.split()[-1])
     assert body_size >= max_size
@@ -1722,9 +1719,7 @@ async def test_app_max_client_size_adjusted(aiohttp_client) -> None:
         resp = await client.post("/", data=too_large_data)
     assert 413 == resp.status
     resp_text = await resp.text()
-    assert (
-        "Maximum request body size 2097152 exceeded, " "actual body size" in resp_text
-    )
+    assert "Maximum request body size 2097152 exceeded, actual body size" in resp_text
     # Maximum request body size X exceeded, actual body size X
     body_size = int(resp_text.split()[-1])
     assert body_size >= custom_max_size
@@ -2329,3 +2324,41 @@ async def test_keepalive_race_condition(aiohttp_client: Any) -> None:
         # Make 2nd request which will hit the race condition.
         async with client.get("/") as resp:
             assert resp.status == 200
+
+
+async def test_keepalive_expires_on_time(aiohttp_client: AiohttpClient) -> None:
+    """Test that the keepalive handle expires on time."""
+
+    async def handler(request: web.Request) -> web.Response:
+        body = await request.read()
+        assert b"" == body
+        return web.Response(body=b"OK")
+
+    app = web.Application()
+    app.router.add_route("GET", "/", handler)
+
+    connector = aiohttp.TCPConnector(limit=1)
+    client = await aiohttp_client(app, connector=connector)
+
+    loop = asyncio.get_running_loop()
+    now = loop.time()
+
+    # Patch loop time so we can control when the keepalive timeout is processed
+    with mock.patch.object(loop, "time") as loop_time_mock:
+        loop_time_mock.return_value = now
+        resp1 = await client.get("/")
+        await resp1.read()
+        request_handler = client.server.handler.connections[0]
+
+        # Ensure the keep alive handle is set
+        assert request_handler._keepalive_handle is not None
+
+        # Set the loop time to exactly the keepalive timeout
+        loop_time_mock.return_value = request_handler._next_keepalive_close_time
+
+        # sleep twice to ensure the keep alive timeout is processed
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        # Ensure the keep alive handle expires
+        assert request_handler._keepalive_handle is None
