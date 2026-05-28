@@ -1,3 +1,9 @@
+python-aiohttp (3.11.16-1deepin7) unstable; urgency=medium
+
+  * Fix CVE-2025-69229: Security fix backported from Debian DSA-6241-1
+
+ -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:09 +0800
+
 python-aiohttp (3.11.16-1deepin6) unstable; urgency=medium
 
   * Fix CVE-2025-69228: Security fix backported from Debian DSA-6241-1
