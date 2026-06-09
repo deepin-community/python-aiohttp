@@ -1,44 +1,14 @@
-python-aiohttp (3.11.16-1deepin7) unstable; urgency=medium
+python-aiohttp (3.11.16-1+deb13u1) trixie-security; urgency=medium
 
-  * Fix CVE-2025-69229: Security fix backported from Debian DSA-6241-1
+  * CVE-2025-69223
+  * CVE-2025-69224
+  * CVE-2025-69225
+  * CVE-2025-69226
+  * CVE-2025-69227
+  * CVE-2025-69228
+  * CVE-2025-69229
 
- -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:09 +0800
-
-python-aiohttp (3.11.16-1deepin6) unstable; urgency=medium
-
-  * Fix CVE-2025-69228: Security fix backported from Debian DSA-6241-1
-
- -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:09 +0800
-
-python-aiohttp (3.11.16-1deepin5) unstable; urgency=medium
-
-  * Fix CVE-2025-69227: Security fix backported from Debian DSA-6241-1
-
- -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:08 +0800
-
-python-aiohttp (3.11.16-1deepin4) unstable; urgency=medium
-
-  * Fix CVE-2025-69226: Security fix backported from Debian DSA-6241-1
-
- -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:07 +0800
-
-python-aiohttp (3.11.16-1deepin3) unstable; urgency=medium
-
-  * Fix CVE-2025-69225: Security fix backported from Debian DSA-6241-1
-
- -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:07 +0800
-
-python-aiohttp (3.11.16-1deepin2) unstable; urgency=medium
-
-  * Fix CVE-2025-69224: Security fix backported from Debian DSA-6241-1
-
- -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:06 +0800
-
-python-aiohttp (3.11.16-1deepin1) unstable; urgency=medium
-
-  * Fix CVE-2025-69223: Security fix backported from Debian DSA-6241-1
-
- -- deepin-ci-robot <packages@deepin.org>  Thu, 28 May 2026 15:00:05 +0800
+ -- Moritz Mühlenhoff <jmm@debian.org>  Tue, 21 Apr 2026 21:00:45 +0200
 
 python-aiohttp (3.11.16-1) unstable; urgency=medium
 
